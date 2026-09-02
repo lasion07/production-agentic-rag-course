@@ -67,6 +67,8 @@ async def ainvoke_generate_answer_step(
                     "model": runtime.context.model_name,
                     "temperature": runtime.context.temperature,
                 },
+                as_type="generation",
+                model=runtime.context.model_name,
             )
             logger.debug("Created Langfuse span for answer generation")
         except Exception as e:

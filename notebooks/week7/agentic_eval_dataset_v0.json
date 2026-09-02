@@ -1,0 +1,127 @@
+[
+  {
+    "input": {
+      "query": "How do I bake sourdough bread?",
+      "fault_plan": null
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "out_of_scope",
+      "terminal_route": "out_of_scope",
+      "retrieval_expected": false,
+      "max_retrieval_rounds": 0
+    },
+    "metadata": {
+      "case_id": "W7E-01",
+      "case_type": "out_of_scope",
+      "evaluation_layer": "agent_policy"
+    }
+  },
+  {
+    "input": {
+      "query": "What role do diffusion models play in last-mile code repair?",
+      "fault_plan": null
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "terminal_route": "generate_answer",
+      "retrieval_expected": true,
+      "retrieval_rounds": 1,
+      "minimum_sources": 1
+    },
+    "metadata": {
+      "case_id": "W7E-02",
+      "case_type": "in_scope_relevant",
+      "evaluation_layer": "end_to_end"
+    }
+  },
+  {
+    "input": {
+      "query": "Tell me about repair approaches",
+      "fault_plan": {
+        "retrieval_sequence": ["irrelevant", "relevant"]
+      }
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "terminal_route": "generate_answer",
+      "retrieval_rounds": 2,
+      "rewrite_expected": true,
+      "maximum_rewrites": 1
+    },
+    "metadata": {
+      "case_id": "W7E-03",
+      "case_type": "semantic_retry",
+      "evaluation_layer": "agent_policy"
+    }
+  },
+  {
+    "input": {
+      "query": "A valid research query absent from the corpus",
+      "fault_plan": {
+        "retrieval_sequence": ["empty_success", "empty_success"]
+      }
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "insufficient_evidence",
+      "terminal_route": "insufficient_evidence",
+      "retrieval_rounds": 2,
+      "maximum_rewrites": 1,
+      "generation_expected": false,
+      "tool_failures": 0
+    },
+    "metadata": {
+      "case_id": "W7E-04",
+      "case_type": "successful_zero_result",
+      "evaluation_layer": "agent_policy"
+    }
+  },
+  {
+    "input": {
+      "query": "What are attention mechanisms in transformers?",
+      "fault_plan": {
+        "embedding_sequence": ["timeout", "timeout"],
+        "bm25_result": "relevant"
+      }
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "degraded",
+      "terminal_route": "generate_answer",
+      "requested_search_mode": "hybrid",
+      "actual_search_mode": "bm25",
+      "embedding_attempts": 2,
+      "fallbacks": 1,
+      "retrieval_rounds": 1
+    },
+    "metadata": {
+      "case_id": "W7E-05",
+      "case_type": "embedding_failure_fallback",
+      "evaluation_layer": "failure_recovery"
+    }
+  },
+  {
+    "input": {
+      "query": "What are attention mechanisms in transformers?",
+      "fault_plan": {
+        "opensearch_sequence": ["timeout", "timeout"]
+      }
+    },
+    "expectedOutput": {
+      "http_status": 503,
+      "business_status": "retrieval_unavailable",
+      "terminal_route": "retrieval_unavailable",
+      "generation_expected": false,
+      "tool_attempts": 2,
+      "tool_failures": 2
+    },
+    "metadata": {
+      "case_id": "W7E-06",
+      "case_type": "retrieval_dependency_failure",
+      "evaluation_layer": "failure_recovery"
+    }
+  }
+]

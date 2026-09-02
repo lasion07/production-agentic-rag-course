@@ -3,10 +3,8 @@ import time
 from typing import Dict, List, Optional
 
 from langchain_core.messages import HumanMessage
-from langfuse.langchain import CallbackHandler
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
-
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 from src.services.ollama.client import OllamaClient
@@ -187,40 +185,30 @@ class AgenticRAGService:
             logger.error("Empty query received")
             raise ValueError("Query cannot be empty")
 
-        # Create trace if Langfuse is enabled (v3 SDK)
-        trace = None
-        if self.langfuse_tracer and self.langfuse_tracer.client:
-            logger.info("Creating Langfuse trace (v3 SDK)")
-            metadata = {
-                "env": self.graph_config.settings.environment,
-                "service": "agentic_rag",
-                "top_k": self.graph_config.top_k,
-                "use_hybrid": self.graph_config.use_hybrid,
-                "model": model_to_use,
-            }
-            # V3 SDK: Use start_as_current_span - will be used with 'with' statement
-            trace = self.langfuse_tracer.client.start_as_current_span(
-                name="agentic_rag_request",
-            )
-
-        # Use proper context manager pattern
-        async def _execute_with_trace():
-            """Execute the workflow with or without tracing context."""
-            if trace is not None:
-                with trace as trace_obj:
-                    trace_obj.update(
-                        input={"query": query},
-                        metadata=metadata,
-                        user_id=user_id,
-                        session_id=f"session_{user_id}",
-                    )
-                    logger.debug(f"Trace created: {trace_obj}")
-                    return await self._run_workflow(query, model_to_use, user_id, trace_obj)
-            else:
-                return await self._run_workflow(query, model_to_use, user_id, None)
-
         try:
-            return await _execute_with_trace()
+            if self.langfuse_tracer:
+                metadata = {
+                    "environment": self.graph_config.settings.environment,
+                    "service": "agentic-rag",
+                    "user_id": user_id,
+                    "top_k": self.graph_config.top_k,
+                    "use_hybrid": self.graph_config.use_hybrid,
+                    "model": model_to_use,
+                }
+                with self.langfuse_tracer.trace_attributes(
+                    user_id=user_id,
+                    session_id=f"session-{user_id}",
+                    trace_name="agentic-rag-request",
+                    tags=["agentic-rag"],
+                ):
+                    with self.langfuse_tracer.start_span(
+                        name="agentic-rag-request",
+                        as_type="agent",
+                        input_data={"query": self.langfuse_tracer.safe_content(query)},
+                        metadata=metadata,
+                    ) as trace:
+                        return await self._run_workflow(query, model_to_use, user_id, trace)
+            return await self._run_workflow(query, model_to_use, user_id, None)
         except Exception as e:
             logger.error(f"Error in Agentic RAG execution: {str(e)}")
             logger.exception("Full traceback:")
@@ -263,19 +251,15 @@ class AgenticRAGService:
                 guardrail_threshold=self.graph_config.guardrail_threshold,
             )
 
-            # Create config with CallbackHandler if Langfuse is enabled (v3 SDK)
+            # Callback observations automatically inherit the current trace.
             config = {"thread_id": f"user_{user_id}_session_{int(time.time())}"}
 
-            # Add CallbackHandler for automatic LLM tracing
-            # IMPORTANT: CallbackHandler automatically inherits the current span context
-            # Since we're inside start_as_current_span, it will be linked automatically
             if self.langfuse_tracer and trace:
                 try:
-                    # V3 SDK: CallbackHandler() automatically uses current trace context
-                    # No need to pass trace explicitly - it's handled by context propagation
-                    callback_handler = CallbackHandler()
-                    config["callbacks"] = [callback_handler]
-                    logger.info("✓ CallbackHandler added (will auto-link to current trace)")
+                    callback_handler = self.langfuse_tracer.get_callback_handler()
+                    if callback_handler:
+                        config["callbacks"] = [callback_handler]
+                        logger.info("✓ Langfuse CallbackHandler added")
                 except Exception as e:
                     logger.warning(f"Failed to create CallbackHandler: {e}")
 
@@ -298,15 +282,13 @@ class AgenticRAGService:
             if trace:
                 trace.update(
                     output={
-                        "answer": answer,
+                        "answer": self.langfuse_tracer.safe_content(answer),
                         "sources_count": len(sources),
                         "retrieval_attempts": retrieval_attempts,
                         "reasoning_steps": reasoning_steps,
                         "execution_time": execution_time,
                     }
                 )
-                trace.end()
-                self.langfuse_tracer.flush()
 
             logger.info("=" * 80)
             logger.info("Agentic RAG Request Completed Successfully")
@@ -333,9 +315,11 @@ class AgenticRAGService:
 
             # Update trace with error (cleanup handled by context manager)
             if trace:
-                trace.update(output={"error": str(e)}, level="ERROR")
-                trace.end()
-                self.langfuse_tracer.flush()
+                trace.update(
+                    output={"error_type": type(e).__name__},
+                    level="ERROR",
+                    status_message=str(e)[:500],
+                )
 
             raise
 

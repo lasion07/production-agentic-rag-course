@@ -21,6 +21,24 @@ class OllamaClient:
         self.prompt_builder = RAGPromptBuilder()
         self.response_parser = ResponseParser()
 
+    @staticmethod
+    def _build_generate_payload(model: str, prompt: str, stream: bool, **kwargs) -> Dict[str, Any]:
+        """Build an Ollama /api/generate payload with runtime controls under options."""
+        data: Dict[str, Any] = {"model": model, "prompt": prompt, "stream": stream}
+
+        # These fields belong at the top level of Ollama's generate request.
+        for key in ("format", "system", "raw", "keep_alive", "think", "suffix"):
+            value = kwargs.pop(key, None)
+            if value is not None:
+                data[key] = value
+
+        options = kwargs.pop("options", {}).copy()
+        options.update(kwargs)
+        if options:
+            data["options"] = options
+
+        return data
+
     async def health_check(self) -> Dict[str, Any]:
         """
         Check if Ollama service is healthy and responding.
@@ -97,7 +115,7 @@ class OllamaClient:
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                data = {"model": model, "prompt": prompt, "stream": stream, **kwargs}
+                data = self._build_generate_payload(model=model, prompt=prompt, stream=stream, **kwargs)
 
                 logger.info(f"Sending request to Ollama: model={model}, stream={stream}, extra_params={kwargs}")
                 response = await client.post(f"{self.base_url}/api/generate", json=data)
@@ -164,7 +182,7 @@ class OllamaClient:
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                data = {"model": model, "prompt": prompt, "stream": True, **kwargs}
+                data = self._build_generate_payload(model=model, prompt=prompt, stream=True, **kwargs)
 
                 logger.info(f"Starting streaming generation: model={model}")
 
@@ -220,6 +238,7 @@ class OllamaClient:
                     prompt=prompt_data["prompt"],
                     temperature=0.7,
                     top_p=0.9,
+                    num_predict=128,
                     format=prompt_data["format"],
                 )
             else:
@@ -232,6 +251,7 @@ class OllamaClient:
                     prompt=prompt,
                     temperature=0.7,
                     top_p=0.9,
+                    num_predict=128,
                 )
 
             if response and "response" in response:
@@ -242,6 +262,8 @@ class OllamaClient:
                     # Try to parse structured response if enabled
                     parsed_response = self.response_parser.parse_structured_response(answer_text)
                     logger.debug(f"Parsed response: {parsed_response}")
+                    parsed_response["usage_metadata"] = response.get("usage_metadata", {})
+                    parsed_response["finish_reason"] = response.get("done_reason")
                     return parsed_response
                 else:
                     # For plain text response, build simple response structure
@@ -263,6 +285,8 @@ class OllamaClient:
                         "sources": sources,
                         "confidence": "medium",
                         "citations": citations[:5],
+                        "usage_metadata": response.get("usage_metadata", {}),
+                        "finish_reason": response.get("done_reason"),
                     }
             else:
                 raise OllamaException("No response generated from Ollama")
@@ -298,6 +322,7 @@ class OllamaClient:
                 prompt=prompt,
                 temperature=0.7,
                 top_p=0.9,
+                num_predict=128,
             ):
                 yield chunk
 

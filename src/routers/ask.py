@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
@@ -14,6 +15,20 @@ logger = logging.getLogger(__name__)
 # Two separate routers - one for regular ask, one for streaming
 ask_router = APIRouter(tags=["ask"])
 stream_router = APIRouter(tags=["stream"])
+
+
+def _usage_from_ollama_chunk(chunk: Dict) -> Dict:
+    """Normalize final Ollama stream counters for Langfuse."""
+    prompt_tokens = int(chunk.get("prompt_eval_count", 0))
+    completion_tokens = int(chunk.get("eval_count", 0))
+    usage = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+    }
+    if chunk.get("total_duration") is not None:
+        usage["latency_ms"] = round(chunk["total_duration"] / 1_000_000, 2)
+    return usage
 
 
 async def _prepare_chunks_and_sources(
@@ -95,13 +110,13 @@ async def ask_question(
             # Check exact cache first
             cached_response = None
             if cache_client:
-                try:
-                    cached_response = await cache_client.find_cached_response(request)
+                with rag_tracer.trace_cache("lookup") as cache_span:
+                    cached_response, cache_result = await cache_client.lookup_response(request)
+                    rag_tracer.end_cache(cache_span, cache_result)
                     if cached_response:
                         logger.info("Returning cached response for exact query match")
+                        rag_tracer.end_request(trace, cached_response.answer, time.time() - start_time)
                         return cached_response
-                except Exception as e:
-                    logger.warning(f"Cache check failed, proceeding with normal flow: {e}")
 
             # Generate query embedding for hybrid search if needed
             query_embedding = None
@@ -140,7 +155,13 @@ async def ask_question(
             with rag_tracer.trace_generation(trace, request.model, final_prompt) as gen_span:
                 rag_response = await ollama_client.generate_rag_answer(query=request.query, chunks=chunks, model=request.model)
                 answer = rag_response.get("answer", "Unable to generate answer")
-                rag_tracer.end_generation(gen_span, answer, request.model)
+                rag_tracer.end_generation(
+                    gen_span,
+                    answer,
+                    request.model,
+                    usage_metadata=rag_response.get("usage_metadata"),
+                    finish_reason=rag_response.get("finish_reason"),
+                )
 
             # Prepare response
             response = AskResponse(
@@ -155,15 +176,15 @@ async def ask_question(
 
             # Store response in exact match cache
             if cache_client:
-                try:
-                    await cache_client.store_response(request, response)
-                except Exception as e:
-                    logger.warning(f"Failed to store response in cache: {e}")
+                with rag_tracer.trace_cache("store") as cache_span:
+                    stored = await cache_client.store_response(request, response)
+                    rag_tracer.end_cache(cache_span, "stored" if stored else "error")
 
             return response
 
         except Exception as e:
             logger.error(f"Error processing request: {e}")
+            rag_tracer.mark_error(trace, e)
             raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -186,8 +207,9 @@ async def ask_question_stream(
             try:
                 # Check exact cache first
                 if cache_client:
-                    try:
-                        cached_response = await cache_client.find_cached_response(request)
+                    with rag_tracer.trace_cache("lookup") as cache_span:
+                        cached_response, cache_result = await cache_client.lookup_response(request)
+                        rag_tracer.end_cache(cache_span, cache_result)
                         if cached_response:
                             logger.info("Returning cached response for exact streaming query match")
 
@@ -205,9 +227,8 @@ async def ask_question_stream(
 
                             # Send completion signal with just the final answer
                             yield f"data: {json.dumps({'answer': cached_response.answer, 'done': True})}\n\n"
+                            rag_tracer.end_request(trace, cached_response.answer, time.time() - start_time)
                             return
-                    except Exception as e:
-                        logger.warning(f"Cache check failed, proceeding with normal flow: {e}")
 
                 # Retrieve chunks
                 chunks, sources, _ = await _prepare_chunks_and_sources(
@@ -215,7 +236,9 @@ async def ask_question_stream(
                 )
 
                 if not chunks:
-                    yield f"data: {json.dumps({'answer': 'No relevant information found.', 'sources': [], 'done': True})}\n\n"
+                    answer = "No relevant information found."
+                    yield f"data: {json.dumps({'answer': answer, 'sources': [], 'done': True})}\n\n"
+                    rag_tracer.end_request(trace, answer, time.time() - start_time)
                     return
 
                 # Send metadata first
@@ -234,16 +257,28 @@ async def ask_question_stream(
                 # Stream generation
                 with rag_tracer.trace_generation(trace, request.model, final_prompt) as gen_span:
                     full_response = ""
+                    completion_start_time = None
+                    final_chunk = {}
                     async for chunk in ollama_client.generate_rag_answer_stream(
                         query=request.query, chunks=chunks, model=request.model
                     ):
                         if chunk.get("response"):
+                            if completion_start_time is None:
+                                completion_start_time = datetime.now(timezone.utc)
                             text_chunk = chunk["response"]
                             full_response += text_chunk
                             yield f"data: {json.dumps({'chunk': text_chunk})}\n\n"
 
                         if chunk.get("done", False):
-                            rag_tracer.end_generation(gen_span, full_response, request.model)
+                            final_chunk = chunk
+                            rag_tracer.end_generation(
+                                gen_span,
+                                full_response,
+                                request.model,
+                                usage_metadata=_usage_from_ollama_chunk(final_chunk),
+                                completion_start_time=completion_start_time,
+                                finish_reason=final_chunk.get("done_reason"),
+                            )
                             yield f"data: {json.dumps({'answer': full_response, 'done': True})}\n\n"
                             break
 
@@ -251,7 +286,7 @@ async def ask_question_stream(
 
                 # Store response in exact match cache
                 if cache_client and full_response:
-                    try:
+                    with rag_tracer.trace_cache("store") as cache_span:
                         search_mode = "bm25" if not request.use_hybrid else "hybrid"
                         response_to_cache = AskResponse(
                             query=request.query,
@@ -260,12 +295,12 @@ async def ask_question_stream(
                             chunks_used=len(chunks),
                             search_mode=search_mode,
                         )
-                        await cache_client.store_response(request, response_to_cache)
-                    except Exception as e:
-                        logger.warning(f"Failed to store streaming response in cache: {e}")
+                        stored = await cache_client.store_response(request, response_to_cache)
+                        rag_tracer.end_cache(cache_span, "stored" if stored else "error")
 
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
+                rag_tracer.mark_error(trace, e)
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(

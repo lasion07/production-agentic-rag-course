@@ -15,7 +15,7 @@ Week 7 adds TWO major enhancements to the arXiv Paper Curator:
 
 **Traditional RAG** (Weeks 5-6):
 ```
-Query → Always Retrieve → Generate Answer
+Qery → Always Retrieve → Generate Answer
 ```
 
 **Agentic RAG** (Week 7):

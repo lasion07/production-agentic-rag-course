@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI):
         await app.state.telegram_service.stop()
         logger.info("Telegram bot stopped")
 
+    app.state.langfuse_tracer.shutdown()
     database.teardown()
     logger.info("API shutdown complete")
 

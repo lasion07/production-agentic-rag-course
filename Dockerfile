@@ -5,10 +5,10 @@ WORKDIR /app
 # Copy configuration files
 COPY pyproject.toml uv.lock ./
 
-# UV_COMPILE_BYTECODE for generating .pyc files -> faster application startup.
-# UV_LINK_MODE=copy to silence warnings about not being able to use hard links
-# since the cache and sync target are on separate file systems.
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+# Avoid precompiling thousands of dependency files in the image. The small
+# startup trade-off is preferable on constrained Docker Desktop environments.
+# UV_LINK_MODE=copy silences cross-filesystem hard-link warnings.
+ENV UV_COMPILE_BYTECODE=0 UV_LINK_MODE=copy
 
 # Install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -37,4 +37,4 @@ COPY --from=base /app /app
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"] 
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

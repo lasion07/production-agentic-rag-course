@@ -57,6 +57,7 @@ async def ainvoke_retrieve_step(
                     "node": "retrieve",
                     "top_k": runtime.context.top_k,
                 },
+                as_type="retriever",
             )
             logger.debug(f"Created Langfuse span for retrieval attempt {current_attempts + 1}")
         except Exception as e:

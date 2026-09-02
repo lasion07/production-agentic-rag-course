@@ -1,0 +1,33 @@
+---
+description: Python service patterns for src/ — factories, routers, and layered RAG code
+globs: src/**/*.py
+alwaysApply: false
+---
+
+# `src/` Python Conventions
+
+## Layering
+
+- **Routers** (`src/routers/`): HTTP only — validate with Pydantic schemas, call services, return responses.
+- **Services** (`src/services/`): business logic and external I/O (OpenSearch, Ollama, Jina, cache, agents).
+- **Factories** (`*/factory.py`): construct clients from settings; wire via `app.state` in `src/main.py` or FastAPI deps in `src/dependencies.py`.
+- **Schemas** (`src/schemas/`): request/response and domain models — keep API contracts here, not in routers.
+- **Repositories** (`src/repositories/`): Postgres access only.
+
+## Patterns to follow
+
+- Reuse existing factory/dependency injection; do not new up clients inside routers.
+- Prefer async for I/O-bound paths already using async (agents, Telegram, streaming ask).
+- Log with module `logger = logging.getLogger(__name__)`; include actionable context, not secrets.
+- Match existing naming: `make_*` factories, `*_client` / `*_service` types.
+
+## Agentic RAG changes
+
+- Graph topology lives in `src/services/agents/agentic_rag.py`.
+- Node logic lives in `src/services/agents/nodes/` — keep nodes thin; put shared helpers in `nodes/utils.py`.
+- Update prompts in `src/services/agents/prompts.py` (or Ollama prompts under `src/services/ollama/`) rather than hardcoding long strings in nodes.
+
+## Don't
+
+- Don't invent parallel search/RAG entrypoints when `ask`, `hybrid_search`, or `agentic_ask` already cover the path.
+- Don't bypass OpenSearch hybrid index setup without checking `OpenSearchClient.setup_indices` behavior.

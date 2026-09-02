@@ -59,6 +59,7 @@ async def ainvoke_grade_documents_step(
                     "node": "grade_documents",
                     "model": runtime.context.model_name,
                 },
+                as_type="evaluator",
             )
             logger.debug("Created Langfuse span for document grading")
         except Exception as e:

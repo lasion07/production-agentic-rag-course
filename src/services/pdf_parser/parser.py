@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
@@ -22,6 +23,9 @@ class PDFParserService:
     async def parse_pdf(self, pdf_path: Path) -> Optional[PdfContent]:
         """Parse PDF using Docling parser only.
 
+        Docling's parse_pdf is synchronous and CPU-heavy; run it in a worker
+        thread so callers can keep using `await` without blocking the event loop.
+
         :param pdf_path: Path to PDF file
         :returns: PdfContent object or None if parsing failed
         """
@@ -30,7 +34,8 @@ class PDFParserService:
             raise PDFValidationError(f"PDF file not found: {pdf_path}")
 
         try:
-            result = await self.docling_parser.parse_pdf(pdf_path)
+            # DoclingParser.parse_pdf is sync — do not await its return value
+            result = await asyncio.to_thread(self.docling_parser.parse_pdf, pdf_path)
             if result:
                 logger.info(f"Parsed {pdf_path.name}")
                 return result

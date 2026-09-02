@@ -1,0 +1,42 @@
+---
+description: Ground answers in real code — search first, cite files, no architecture guessing
+alwaysApply: true
+---
+
+# Codebase Grounding
+
+This repository is an **Agentic RAG system** (arXiv Paper Curator): FastAPI + OpenSearch + Ollama + LangGraph, orchestrated with Docker Compose.
+
+## When answering questions
+
+1. **Search the codebase before answering** — use Grep/Glob/Read (or GitNexus if indexed). Do not rely on memory or README alone when implementation details matter.
+2. **Prefer actual implementation** — cite concrete symbols, call chains, and config from code.
+3. **Do not guess architecture** — if something is unclear, say so and point to the files you checked.
+4. **Mention filenames** — e.g. `src/main.py`, `src/services/agents/agentic_rag.py`, `compose.yml`.
+5. **Explain execution flow using real code** — follow factories → routers → services → clients, and name the functions involved.
+
+## Good vs bad
+
+```text
+❌ BAD: "The agent probably calls OpenSearch then the LLM."
+✅ GOOD: "`AgenticRAGService._build_graph` in src/services/agents/agentic_rag.py
+   wires guardrail → retrieve → grade_documents → generate_answer|rewrite_query;
+   retrieve uses the OpenSearch tool from src/services/agents/tools.py."
+```
+
+## Scope discipline
+
+- Treat README/notebooks as learning guides; treat `src/` and `compose.yml` as source of truth for runtime behavior.
+- When docs and code disagree, report the code behavior and note the mismatch.
+---
+
+# Project map (where to look)
+
+| Concern | Start here |
+|---------|------------|
+| App boot / DI | `src/main.py`, `src/dependencies.py`, `*/factory.py` |
+| Classic RAG | `src/routers/ask.py` → OpenSearch + Ollama |
+| Agentic RAG | `src/routers/agentic_ask.py` → `src/services/agents/` |
+| Hybrid search | `src/routers/hybrid_search.py`, `src/services/opensearch/` |
+| Ingestion | `airflow/dags/`, `src/services/metadata_fetcher.py` |
+| Infra | `compose.yml`, `.env.example` |

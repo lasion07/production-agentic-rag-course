@@ -43,10 +43,12 @@ Query → Cache Check → [Hit: ~100ms] | [Miss: Full Pipeline ~15s] → Cache S
 ### Environment Setup
 ```bash
 # Required environment variables
-LANGFUSE__SECRET_KEY=sk_lf_your_secret_key
-LANGFUSE__PUBLIC_KEY=pk_lf_your_public_key
+LANGFUSE_SECRET_KEY=sk-lf-your-secret-key
+LANGFUSE_PUBLIC_KEY=pk-lf-your-public-key
+LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
+LANGFUSE_CAPTURE_CONTENT=false
 REDIS__HOST=redis
-REDIS__TTL_HOURS=24
+REDIS__TTL_HOURS=6
 ```
 
 ### Start Services
@@ -77,6 +79,13 @@ curl -X POST "http://localhost:8000/api/v1/ask" \
 
 ## Testing
 
+### Verify Langfuse delivery and privacy
+
+```bash
+env LANGFUSE_DEBUG=false uv run python notebooks/week6/run_langfuse_smoke.py
+env LANGFUSE_DEBUG=false uv run python notebooks/week6/audit_latest_langfuse_trace.py
+```
+
 ### Run the Notebook
 ```bash
 jupyter notebook notebooks/week6/week6_cache_testing.ipynb
@@ -99,7 +108,7 @@ curl "http://localhost:8000/api/v1/health"
 | Issue | Solution |
 |-------|----------|
 | **Cache not working** | Check Redis: `redis-cli ping` |
-| **No Langfuse traces** | Verify environment variables: `LANGFUSE__*` |
+| **No Langfuse traces** | Verify official variables `LANGFUSE_*`, regional base URL, then emit and fetch the smoke trace |
 | **Slow responses** | Monitor cache hit rate and system resources |
 
 ## Next Steps

@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from src.config import Settings
+from src.config import LangfuseSettings, Settings
 
 
 def test_settings_initialization():
@@ -39,3 +39,15 @@ def test_settings_ollama_defaults():
     # In Docker environment, this should be ollama service host
     expected_host = "http://ollama:11434" if "OLLAMA_HOST" not in os.environ else settings.ollama_host
     assert settings.ollama_host in ["http://localhost:11434", "http://ollama:11434"]
+
+
+def test_langfuse_official_environment_variable_names(monkeypatch):
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://us.cloud.langfuse.com")
+
+    settings = LangfuseSettings()
+
+    assert settings.public_key == "pk-test"
+    assert settings.secret_key == "sk-test"
+    assert settings.base_url == "https://us.cloud.langfuse.com"

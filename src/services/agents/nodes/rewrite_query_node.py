@@ -62,6 +62,7 @@ async def ainvoke_rewrite_query_step(
                     "strategy": "llm_based_expansion",
                     "model": runtime.context.model_name,
                 },
+                as_type="chain",
             )
             logger.debug("Created Langfuse span for query rewriting")
         except Exception as e:

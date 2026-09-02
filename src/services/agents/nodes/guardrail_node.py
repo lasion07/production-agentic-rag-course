@@ -71,6 +71,7 @@ async def ainvoke_guardrail_step(
                     "node": "guardrail",
                     "model": runtime.context.model_name,
                 },
+                as_type="guardrail",
             )
             logger.debug("Created Langfuse span for guardrail validation (v2 SDK)")
         except Exception as e:

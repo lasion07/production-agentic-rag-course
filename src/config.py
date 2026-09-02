@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -108,21 +108,43 @@ class OpenSearchSettings(BaseConfigSettings):
 class LangfuseSettings(BaseConfigSettings):
     model_config = SettingsConfigDict(
         env_file=[".env", str(ENV_FILE_PATH)],
-        env_prefix="LANGFUSE__",
+        env_prefix="",
         extra="ignore",
         frozen=True,
         case_sensitive=False,
     )
 
-    public_key: str = ""
-    secret_key: str = ""
-    host: str = "http://localhost:3000"  # Self-hosted Langfuse URL
-    enabled: bool = True
-    flush_at: int = 15  # Number of events before flushing
-    flush_interval: float = 1.0  # Seconds between flushes
-    max_retries: int = 3
-    timeout: int = 30
-    debug: bool = False
+    # Prefer the official SDK environment variables while retaining legacy
+    # double-underscore aliases used by earlier course versions.
+    public_key: str = Field(
+        "", validation_alias=AliasChoices("LANGFUSE_PUBLIC_KEY", "LANGFUSE__PUBLIC_KEY")
+    )
+    secret_key: str = Field(
+        "", validation_alias=AliasChoices("LANGFUSE_SECRET_KEY", "LANGFUSE__SECRET_KEY")
+    )
+    base_url: str = Field(
+        "https://cloud.langfuse.com",
+        validation_alias=AliasChoices(
+            "LANGFUSE_BASE_URL",
+            "LANGFUSE_HOST",
+            "LANGFUSE__BASE_URL",
+            "LANGFUSE__HOST",
+        ),
+    )
+    enabled: bool = Field(True, validation_alias=AliasChoices("LANGFUSE_ENABLED", "LANGFUSE__ENABLED"))
+    flush_at: int = Field(15, validation_alias=AliasChoices("LANGFUSE_FLUSH_AT", "LANGFUSE__FLUSH_AT"))
+    flush_interval: float = Field(
+        1.0, validation_alias=AliasChoices("LANGFUSE_FLUSH_INTERVAL", "LANGFUSE__FLUSH_INTERVAL")
+    )
+    timeout: int = Field(5, validation_alias=AliasChoices("LANGFUSE_TIMEOUT", "LANGFUSE__TIMEOUT"))
+    debug: bool = Field(False, validation_alias=AliasChoices("LANGFUSE_DEBUG", "LANGFUSE__DEBUG"))
+    sample_rate: float = Field(
+        1.0, validation_alias=AliasChoices("LANGFUSE_SAMPLE_RATE", "LANGFUSE__SAMPLE_RATE"), ge=0.0, le=1.0
+    )
+    capture_content: bool = Field(
+        False,
+        validation_alias=AliasChoices("LANGFUSE_CAPTURE_CONTENT", "LANGFUSE__CAPTURE_CONTENT"),
+    )
 
 
 class RedisSettings(BaseConfigSettings):
