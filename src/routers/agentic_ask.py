@@ -39,19 +39,49 @@ async def ask_agentic(
     try:
         result = await agentic_rag.ask(
             query=request.query,
+            model=request.model,
+            top_k=request.top_k,
+            use_hybrid=request.use_hybrid,
+            categories=request.categories,
         )
+
+        if result.get("business_status") == "retrieval_unavailable":
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "business_status": "retrieval_unavailable",
+                    "message": result.get("answer", "Retrieval is temporarily unavailable."),
+                },
+            )
+        if result.get("business_status") == "deadline_exceeded":
+            raise HTTPException(
+                status_code=504,
+                detail={
+                    "business_status": "deadline_exceeded",
+                    "message": result.get("answer", "The request deadline was exceeded."),
+                },
+            )
 
         return AgenticAskResponse(
             query=result["query"],
             answer=result["answer"],
             sources=result.get("sources", []),
-            chunks_used=request.top_k,
-            search_mode="hybrid" if request.use_hybrid else "bm25",
+            chunks_used=result.get("chunks_used", len(result.get("sources", []))),
+            search_mode=result.get("actual_search_mode", "none"),
             reasoning_steps=result.get("reasoning_steps", []),
             retrieval_attempts=result.get("retrieval_attempts", 0),
             trace_id=result.get("trace_id"),
+            rewritten_query=result.get("rewritten_query"),
+            business_status=result.get("business_status", "success"),
+            requested_search_mode=result.get("requested_search_mode", "hybrid" if request.use_hybrid else "bm25"),
+            embedding_attempts=result.get("embedding_attempts", 0),
+            tool_attempts=result.get("tool_attempts", 0),
+            tool_failures=result.get("tool_failures", 0),
+            fallbacks=result.get("fallbacks", 0),
         )
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
@@ -81,10 +111,7 @@ async def submit_feedback(
     """
     try:
         if not langfuse_tracer:
-            raise HTTPException(
-                status_code=503,
-                detail="Langfuse tracing is disabled. Cannot submit feedback."
-            )
+            raise HTTPException(status_code=503, detail="Langfuse tracing is disabled. Cannot submit feedback.")
 
         success = langfuse_tracer.submit_feedback(
             trace_id=request.trace_id,
@@ -96,20 +123,11 @@ async def submit_feedback(
             # Flush to ensure feedback is sent immediately
             langfuse_tracer.flush()
 
-            return FeedbackResponse(
-                success=True,
-                message="Feedback recorded successfully"
-            )
+            return FeedbackResponse(success=True, message="Feedback recorded successfully")
         else:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to submit feedback to Langfuse"
-            )
+            raise HTTPException(status_code=500, detail="Failed to submit feedback to Langfuse")
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error submitting feedback: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error submitting feedback: {str(e)}")

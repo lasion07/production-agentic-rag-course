@@ -42,4 +42,9 @@ async def ainvoke_out_of_scope_step(
 
     logger.info("Responding with out-of-scope message")
 
-    return {"messages": [AIMessage(content=response_text)]}
+    return {
+        "messages": [AIMessage(content=response_text)],
+        "business_status": "out_of_scope",
+        "terminal_route": "out_of_scope",
+        "actual_search_mode": "none",
+    }

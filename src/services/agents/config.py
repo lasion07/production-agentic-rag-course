@@ -1,7 +1,6 @@
 from typing import Any, Dict
 
 from pydantic import BaseModel, Field
-
 from src.config import Settings, get_settings
 
 
@@ -28,6 +27,12 @@ class GraphConfig(BaseModel):
     temperature: float = 0.0
     top_k: int = 3
     use_hybrid: bool = True
+    max_embedding_attempts: int = 2
+    max_search_attempts: int = 2
+    embedding_attempt_timeout_seconds: float = 10.0
+    search_attempt_timeout_seconds: float = 5.0
+    total_deadline_seconds: float = 120.0
+    generation_reserve_seconds: float = 55.0
     enable_tracing: bool = True
-    metadata: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     settings: Settings = Field(default_factory=get_settings)

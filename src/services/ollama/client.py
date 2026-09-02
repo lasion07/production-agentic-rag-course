@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
+from langchain_ollama import ChatOllama
 from src.config import Settings
 from src.exceptions import OllamaConnectionError, OllamaException, OllamaTimeoutError
 from src.schemas.ollama import RAGResponse
@@ -20,6 +21,28 @@ class OllamaClient:
         self.timeout = httpx.Timeout(float(settings.ollama_timeout))
         self.prompt_builder = RAGPromptBuilder()
         self.response_parser = ResponseParser()
+
+    def get_langchain_model(
+        self,
+        model: str,
+        temperature: float = 0.0,
+        **kwargs: Any,
+    ) -> ChatOllama:
+        """Create the LangChain adapter used by agent nodes.
+
+        The adapter inherits the same host and timeout policy as the lower-level
+        Ollama API methods, while allowing each request to choose its model.
+        """
+
+        return ChatOllama(
+            model=model,
+            base_url=self.base_url,
+            temperature=temperature,
+            keep_alive="10m",
+            client_kwargs={"timeout": self.timeout},
+            async_client_kwargs={"timeout": self.timeout},
+            **kwargs,
+        )
 
     @staticmethod
     def _build_generate_payload(model: str, prompt: str, stream: bool, **kwargs) -> Dict[str, Any]:
@@ -134,9 +157,8 @@ class OllamaClient:
 
                     # Calculate total tokens
                     if usage_metadata:
-                        usage_metadata["total_tokens"] = (
-                            usage_metadata.get("prompt_tokens", 0) +
-                            usage_metadata.get("completion_tokens", 0)
+                        usage_metadata["total_tokens"] = usage_metadata.get("prompt_tokens", 0) + usage_metadata.get(
+                            "completion_tokens", 0
                         )
 
                     # Parse timing information (convert nanoseconds to milliseconds)

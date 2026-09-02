@@ -5,7 +5,7 @@ from typing import Dict
 from langgraph.runtime import Runtime
 
 from ..context import Context
-from ..models import GradeDocuments, GradingResult
+from ..models import GradeDocuments, GradingResult, SourceItem
 from ..prompts import GRADE_DOCUMENTS_PROMPT
 from ..state import AgentState
 from .utils import get_latest_context, get_latest_query
@@ -32,7 +32,10 @@ async def ainvoke_grade_documents_step(
 
     # Get query and context
     question = get_latest_query(state["messages"])
-    context = get_latest_context(state["messages"])
+    retrieved_documents = state.get("retrieved_documents", [])
+    context = "\n\n".join(document.page_content for document in retrieved_documents)
+    if "retrieved_documents" not in state:
+        context = get_latest_context(state["messages"])
 
     # Extract document chunks from context for logging
     chunks_preview = []
@@ -66,18 +69,25 @@ async def ainvoke_grade_documents_step(
             logger.warning(f"Failed to create span for grade_documents node: {e}")
 
     if not context:
-        logger.warning("No context found, routing to rewrite_query")
+        can_rewrite = state.get("retrieval_attempts", 0) < runtime.context.max_retrieval_attempts
+        route = "rewrite_query" if can_rewrite else "insufficient_evidence"
+        logger.warning("No context found, routing to %s", route)
 
         # Update span with no context result
         if span:
             execution_time = (time.time() - start_time) * 1000
             runtime.context.langfuse_tracer.end_span(
                 span,
-                output={"routing_decision": "rewrite_query", "reason": "no_context"},
+                output={"routing_decision": route, "reason": "no_context"},
                 metadata={"execution_time_ms": execution_time},
             )
 
-        return {"routing_decision": "rewrite_query", "grading_results": []}
+        return {
+            "routing_decision": route,
+            "grading_results": [],
+            "relevant_documents": [],
+            "relevant_sources": [],
+        }
 
     logger.debug(f"Grading context of length {len(context)} characters")
 
@@ -93,6 +103,7 @@ async def ainvoke_grade_documents_step(
         llm = runtime.context.ollama_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=0.0,
+            num_predict=32,
         )
 
         # Create structured output LLM for grading
@@ -119,6 +130,7 @@ async def ainvoke_grade_documents_step(
         logger.error(f"LLM grading failed: {e}, falling back to heuristic")
         # Fallback to simple heuristic if LLM fails
         is_relevant = len(context.strip()) > 50
+        score = 1.0 if is_relevant else 0.0
         grading_result = GradingResult(
             document_id="retrieved_docs",
             is_relevant=is_relevant,
@@ -127,7 +139,29 @@ async def ainvoke_grade_documents_step(
         )
 
     # Determine routing
-    route = "generate_answer" if is_relevant else "rewrite_query"
+    if is_relevant:
+        route = "generate_answer"
+    elif state.get("retrieval_attempts", 0) < runtime.context.max_retrieval_attempts:
+        route = "rewrite_query"
+    else:
+        route = "insufficient_evidence"
+
+    relevant_documents = retrieved_documents if is_relevant else []
+    relevant_sources = []
+    for document in relevant_documents:
+        metadata = document.metadata
+        authors = metadata.get("authors", [])
+        if isinstance(authors, str):
+            authors = [author.strip() for author in authors.split(",") if author.strip()]
+        relevant_sources.append(
+            SourceItem(
+                arxiv_id=str(metadata.get("arxiv_id", "")),
+                title=str(metadata.get("title", "")),
+                authors=authors,
+                url=str(metadata.get("source", "")),
+                relevance_score=float(metadata.get("score", 0.0)),
+            )
+        )
 
     logger.info(f"Grading result: {'relevant' if is_relevant else 'not relevant'}, routing to: {route}")
 
@@ -151,4 +185,18 @@ async def ainvoke_grade_documents_step(
     return {
         "routing_decision": route,
         "grading_results": [grading_result],
+        "relevant_documents": relevant_documents,
+        "relevant_sources": relevant_sources,
     }
+
+
+def route_after_grading(state: AgentState, runtime: Runtime[Context]) -> str:
+    """Enforce evidence and round-budget invariants after semantic grading."""
+
+    decision = state.get("routing_decision")
+    has_evidence = bool(state.get("relevant_documents"))
+    if decision == "generate_answer" and has_evidence:
+        return "generate_answer"
+    if decision == "rewrite_query" and state.get("retrieval_attempts", 0) < runtime.context.max_retrieval_attempts:
+        return "rewrite_query"
+    return "insufficient_evidence"

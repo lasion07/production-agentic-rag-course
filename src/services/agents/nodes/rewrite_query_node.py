@@ -16,12 +16,8 @@ logger = logging.getLogger(__name__)
 class QueryRewriteOutput(BaseModel):
     """Structured output for query rewriting."""
 
-    rewritten_query: str = Field(
-        description="The improved query optimized for document retrieval"
-    )
-    reasoning: str = Field(
-        description="Brief explanation of how the query was improved"
-    )
+    rewritten_query: str = Field(description="The improved query optimized for document retrieval")
+    reasoning: str = Field(description="Brief explanation of how the query was improved")
 
 
 async def ainvoke_rewrite_query_step(
@@ -74,6 +70,7 @@ async def ainvoke_rewrite_query_step(
         llm = runtime.context.ollama_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=0.3,  # Lower temperature for more focused rewriting
+            num_predict=64,
         )
         structured_llm = llm.with_structured_output(QueryRewriteOutput)
 
@@ -97,10 +94,7 @@ async def ainvoke_rewrite_query_step(
         reasoning = result.reasoning
 
         llm_duration = time.time() - llm_start
-        logger.info(
-            f"Query rewritten in {llm_duration:.2f}s: "
-            f"'{original_question[:50]}...' -> '{rewritten_query[:50]}...'"
-        )
+        logger.info(f"Query rewritten in {llm_duration:.2f}s: '{original_question[:50]}...' -> '{rewritten_query[:50]}...'")
         logger.debug(f"Rewriting reasoning: {reasoning}")
 
     except Exception as e:
@@ -124,7 +118,7 @@ async def ainvoke_rewrite_query_step(
                 "execution_time_ms": execution_time,
                 "original_length": len(original_question),
                 "rewritten_length": len(rewritten_query),
-                "llm_duration_seconds": llm_duration if 'llm_duration' in locals() else None,
+                "llm_duration_seconds": llm_duration if "llm_duration" in locals() else None,
             },
         )
 

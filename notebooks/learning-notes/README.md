@@ -8,14 +8,15 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 - **Đã hoàn thành:** Week 1 — Infrastructure; Week 2 — Ingestion; Week 3 — OpenSearch/BM25; Week 4 — Chunking, embeddings và hybrid retrieval; Week 5 — Generation và complete RAG serving; Week 6 — Caching và observability
 - **Bằng chứng Week 4:** 3 papers, 81 real embeddings, 0 indexing errors, FastAPI hybrid HTTP 200, 6/6 queries rank relevant paper #1
 - **Bằng chứng Week 5:** RAG stream hoàn tất, TTFT 3.275s, total latency 49.772s, 128 token events; đã phân tích SSE buffering, truncation và citation grounding
-- **Đang học:** Week 7 — Agentic RAG
+- **Đã hoàn thành:** Week 7 — Agentic RAG; bài kiểm tra tổng kết đạt **85/100**
 - **Đã hoàn thành trong Week 5:** Bài 5.1 — Context; Bài 5.2 — Generation validation; Bài 5.3 — Streaming; Bài 5.4 — Complete RAG practical
 - **Đã hoàn thành trong Week 6:** Bài 6.1 — Cache semantics; Bài 6.2 — Stampede/fail-open/metrics; Bài 6.3 — Tracing/latency/alerts; Bài 6.4 — Langfuse runtime hardening
 - **Bằng chứng Week 6.2:** 100 requests tạo 100 generations khi không lock, 4 với local locks và 1 với Redis distributed lock; fail-open trả đủ 10/10 responses
 - **Bằng chứng Week 6.3:** dựng trace tree 50s với generation chiếm 96%; đánh giá đúng critical RAG error, warning Redis degradation và trace delivery gap
 - **Bằng chứng Week 6.4:** Langfuse Cloud nhận trace RAG thật gồm 6 observations; generation 1.620 tokens; privacy audit pass; API container healthy
-- **Đã hoàn thành trong Week 7:** Bài 7.1 — Từ fixed pipeline đến bounded agent loop; Bài 7.2 — Agent state, nodes, conditional edges và routing; Bài 7.3 — Tool execution, retries và agent failure handling
-- **Bài tiếp theo:** Week 7.4 — Agentic RAG practical, fault injection và evaluation
+- **Đã hoàn thành trong Week 7:** Bài 7.1 — Từ fixed pipeline đến bounded agent loop; Bài 7.2 — Agent state, nodes, conditional edges và routing; Bài 7.3 — Tool execution, retries và agent failure handling; Bài 7.4 — Agentic RAG practical, fault injection và evaluation
+- **Bằng chứng Week 7.4:** 6-case regression dataset đã upload Langfuse; local fault injection đạt pass=3, fail=9, blocked=6 và tái hiện đúng error masking/fallback gaps
+- **Bài tiếp theo:** Citation allowlist/claim validation và tối ưu agent latency theo phase budgets
 - **Technical debt:** Các lỗi source được hoãn có chủ đích đến sau khóa học và theo dõi trong backlog riêng
 - **Cần ôn lại:** ingestion ordering, serving dependencies và BM25 fallback
 
@@ -27,6 +28,8 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 2. [Kết quả bài kiểm tra số 1 — 81/100](assessment-01-weeks1-4-result.md)
 3. [Bài phụ đạo 1 — Degradation, reconciliation và context diversity](remedial-01-degradation-reconciliation-diversity.md)
 4. [Technical debt backlog — Các lỗi source cần cải thiện sau khóa học](technical-debt-backlog.md)
+5. [Bài kiểm tra thường xuyên số 2 — Week 7 Agentic RAG](assessment-02-week7-agentic-rag.md)
+6. [Kết quả bài kiểm tra số 2 — Week 7 Agentic RAG — 85/100](assessment-02-week7-agentic-rag-result.md)
 
 ### Phần 1 — Nền tảng kiến trúc
 
@@ -76,6 +79,9 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 1. [Week 7.1 — Từ fixed RAG pipeline đến agent loop](week7-01-fixed-pipeline-to-agent-loop.md)
 2. [Week 7.2 — Agent state, nodes, conditional edges và routing](week7-02-state-nodes-conditional-routing.md)
 3. [Week 7.3 — Tool execution, retries và agent failure handling](week7-03-tool-execution-retries-failure-handling.md)
+4. [Week 7.4 — Agentic RAG practical, fault injection và evaluation](week7-04-agentic-practical-fault-evaluation.md)
+5. [Tổng kết Week 7 — Production Agentic RAG](week7-summary.md)
+6. [Week 7.5 — Evaluation-driven hardening với sáu regression cases](week7-05-evaluation-driven-hardening.md)
 
 ## Cách sử dụng ghi chú
 

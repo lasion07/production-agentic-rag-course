@@ -1,9 +1,10 @@
 from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
+from langchain_core.documents import Document
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
-from .models import GradingResult, GuardrailScoring, RoutingDecision, SourceItem, ToolArtefact
+from .models import GradingResult, GuardrailScoring, SourceItem, ToolArtefact
 
 
 class AgentState(TypedDict):
@@ -63,9 +64,20 @@ class AgentState(TypedDict):
     rewritten_query: Optional[str]
     retrieval_attempts: int
     guardrail_result: Optional[GuardrailScoring]
-    routing_decision: Optional[RoutingDecision]
+    routing_decision: Optional[str]
+    retrieved_documents: List[Document]
+    relevant_documents: List[Document]
     sources: Optional[Dict[str, Any]]
     relevant_sources: List[SourceItem]
     relevant_tool_artefacts: Optional[List[ToolArtefact]]
     grading_results: List[GradingResult]
+    tool_status: Optional[str]
+    requested_search_mode: str
+    actual_search_mode: str
+    business_status: Optional[str]
+    terminal_route: Optional[str]
+    embedding_attempts: int
+    tool_attempts: int
+    tool_failures: int
+    fallbacks: int
     metadata: Dict[str, Any]

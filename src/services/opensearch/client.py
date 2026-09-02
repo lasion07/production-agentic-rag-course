@@ -213,7 +213,7 @@ class OpenSearchClient:
 
         except Exception as e:
             logger.error(f"Unified search error: {e}")
-            return {"total": 0, "hits": []}
+            raise
 
     def _search_bm25_only(
         self, query: str, size: int, from_: int, categories: Optional[List[str]], latest: bool

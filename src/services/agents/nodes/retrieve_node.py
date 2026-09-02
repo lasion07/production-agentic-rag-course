@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Dict, Union
+from typing import Dict, Literal, Union
 
 from langchain_core.messages import AIMessage
 from langgraph.runtime import Runtime
@@ -83,7 +83,11 @@ async def ainvoke_retrieve_step(
                 metadata={"execution_time_ms": execution_time},
             )
 
-        return {**updates, "messages": [AIMessage(content=fallback_msg)]}
+        return {
+            **updates,
+            "messages": [AIMessage(content=fallback_msg)],
+            "routing_decision": "insufficient_evidence",
+        }
 
     # Increment retrieval attempts
     new_attempt_count = current_attempts + 1
@@ -120,3 +124,11 @@ async def ainvoke_retrieve_step(
         )
 
     return updates
+
+
+def route_after_retrieve(state: AgentState) -> Literal["tool_retrieve", "insufficient_evidence"]:
+    """Route a created tool call or terminate safely when the round budget is exhausted."""
+
+    if state.get("routing_decision") == "insufficient_evidence":
+        return "insufficient_evidence"
+    return "tool_retrieve"

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from langfuse._client.span import LangfuseSpan
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
 
+from langfuse._client.span import LangfuseSpan
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 from src.services.ollama.client import OllamaClient
@@ -36,5 +36,13 @@ class Context:
     model_name: str = "llama3.2:1b"
     temperature: float = 0.0
     top_k: int = 3
+    use_hybrid: bool = True
+    categories: Optional[List[str]] = None
     max_retrieval_attempts: int = 2
+    max_embedding_attempts: int = 2
+    max_search_attempts: int = 2
+    embedding_attempt_timeout_seconds: float = 10.0
+    search_attempt_timeout_seconds: float = 5.0
+    deadline_monotonic: Optional[float] = None
+    generation_reserve_seconds: float = 55.0
     guardrail_threshold: int = 60

@@ -85,6 +85,7 @@ async def ainvoke_guardrail_step(
         llm = runtime.context.ollama_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=0.0,
+            num_predict=32,
         )
 
         # Create structured output LLM for guardrail scoring
@@ -116,10 +117,7 @@ async def ainvoke_guardrail_step(
         logger.error(f"LLM guardrail validation failed: {e}, falling back to default")
 
         # Fallback to a conservative default if LLM fails
-        response = GuardrailScoring(
-            score=50,
-            reason=f"LLM validation failed, using conservative default: {str(e)}"
-        )
+        response = GuardrailScoring(score=50, reason=f"LLM validation failed, using conservative default: {str(e)}")
 
         # Update span with error
         if span:

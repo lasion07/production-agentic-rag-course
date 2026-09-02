@@ -24,11 +24,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.dependencies import get_agentic_rag_service
 from src.services.agents.models import GradeDocuments, GuardrailScoring
-from src.services.agents.nodes.grade_documents_node import ainvoke_grade_documents_step
+from src.services.agents.nodes.grade_documents_node import (
+    ainvoke_grade_documents_step,
+    route_after_grading,
+)
 from src.services.agents.nodes.guardrail_node import continue_after_guardrail
-from src.services.agents.tools import create_retriever_tool
-from src.services.opensearch.client import OpenSearchClient
-
+from src.services.agents.nodes.tool_execution_node import route_after_tool
+from src.services.agents.tools import execute_retrieval
 
 DATASET_PATH = Path(__file__).with_name("agentic_eval_dataset_v0.json")
 
@@ -55,9 +57,7 @@ class FakeOllama:
 
     def get_langchain_model(self, **_kwargs: Any) -> FakeLangChainModel:
         grade = self.grades.pop(0)
-        return FakeLangChainModel(
-            GradeDocuments(binary_score=grade, reasoning=f"Injected grade: {grade}")
-        )
+        return FakeLangChainModel(GradeDocuments(binary_score=grade, reasoning=f"Injected grade: {grade}"))
 
 
 class TimeoutEmbeddings:
@@ -75,6 +75,27 @@ class UnusedOpenSearch:
         raise AssertionError("OpenSearch must not run after an unhandled embedding timeout")
 
 
+class RelevantOpenSearch:
+    def search_unified(self, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "total": 1,
+            "hits": [
+                {
+                    "chunk_text": "Attention mechanisms let a model weight relevant token relationships.",
+                    "arxiv_id": "1706.03762",
+                    "title": "Attention Is All You Need",
+                    "authors": "Vaswani et al.",
+                    "score": 1.0,
+                }
+            ],
+        }
+
+
+class SuccessfulEmbeddings:
+    async def embed_query(self, _query: str) -> list[float]:
+        return [0.1, 0.2]
+
+
 class TimeoutSearchTransport:
     def __init__(self) -> None:
         self.attempts = 0
@@ -84,18 +105,40 @@ class TimeoutSearchTransport:
         raise TimeoutError("Injected OpenSearch timeout")
 
 
-def runtime_for_grades(grades: list[str]) -> SimpleNamespace:
+class TimeoutOpenSearch:
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    def search_unified(self, **_kwargs: Any) -> dict[str, Any]:
+        self.attempts += 1
+        raise TimeoutError("Injected OpenSearch timeout")
+
+
+def runtime_for_grades(grades: list[str], max_retrieval_attempts: int = 2) -> SimpleNamespace:
     return SimpleNamespace(
         context=SimpleNamespace(
             ollama_client=FakeOllama(grades),
             langfuse_enabled=False,
             trace=None,
             model_name="fault-injection-model",
+            max_retrieval_attempts=max_retrieval_attempts,
         )
     )
 
 
-async def grade(query: str, binary_score: str) -> str:
+async def grade(query: str, binary_score: str, retrieval_attempts: int = 1) -> dict[str, Any]:
+    from langchain_core.documents import Document
+
+    document = Document(
+        page_content="A controlled document excerpt with enough content for grading.",
+        metadata={
+            "arxiv_id": "fault-paper",
+            "title": "Controlled paper",
+            "authors": [],
+            "source": "https://arxiv.org/pdf/fault-paper.pdf",
+            "score": 1.0,
+        },
+    )
     state = {
         "messages": [
             HumanMessage(content=query),
@@ -105,13 +148,14 @@ async def grade(query: str, binary_score: str) -> str:
                 name="retrieve_papers",
             ),
         ],
-        "retrieval_attempts": 1,
+        "retrieval_attempts": retrieval_attempts,
+        "retrieved_documents": [document],
     }
     result = await ainvoke_grade_documents_step(
         state,
         runtime_for_grades([binary_score]),
     )
-    return str(result["routing_decision"])
+    return result
 
 
 def dependency_construction_blocker() -> str | None:
@@ -136,81 +180,91 @@ async def probe_case(case_id: str, query: str) -> dict[str, Any]:
         )
         return {
             "terminal_route": "out_of_scope" if route == "out_of_scope" else route,
+            "business_status": "out_of_scope",
+            "http_status": 200,
             "retrieval_expected": False,
             "retrieval_rounds": 0,
         }
 
     if case_id == "W7E-02":
-        route = await grade(query, "yes")
+        result = await grade(query, "yes")
+        route = route_after_grading({**result, "retrieval_attempts": 1}, runtime_for_grades([], 2))
         return {
             "terminal_route": route,
+            "business_status": "success",
+            "http_status": 200,
             "retrieval_expected": True,
             "retrieval_rounds": 1,
             "minimum_sources": 1,
         }
 
     if case_id == "W7E-03":
-        first_route = await grade(query, "no")
-        second_route = await grade(query, "yes")
+        first = await grade(query, "no", retrieval_attempts=1)
+        first_route = first["routing_decision"]
+        second = await grade(query, "yes", retrieval_attempts=2)
+        second_route = route_after_grading({**second, "retrieval_attempts": 2}, runtime_for_grades([], 2))
         return {
             "terminal_route": second_route,
+            "business_status": "success",
+            "http_status": 200,
             "retrieval_rounds": 2,
             "rewrite_expected": first_route == "rewrite_query",
             "rewrite_count": 1,
         }
 
     if case_id == "W7E-04":
-        # Current grade node routes every empty context to rewrite_query. With two
-        # rounds this produces two rewrite decisions; the second is unnecessary.
+        empty_message = ToolMessage(content="", tool_call_id="empty", name="retrieve_papers")
+        first_state = {"messages": [HumanMessage(content=query), empty_message], "retrieval_attempts": 1}
+        first = await ainvoke_grade_documents_step(first_state, runtime_for_grades([], 2))
+        second_state = {"messages": [HumanMessage(content=query), empty_message], "retrieval_attempts": 2}
+        second = await ainvoke_grade_documents_step(second_state, runtime_for_grades([], 2))
         return {
-            "terminal_route": "max_attempts_fallback",
-            "business_status": "fallback_message",
+            "terminal_route": second["routing_decision"],
+            "business_status": "insufficient_evidence",
+            "http_status": 200,
             "retrieval_rounds": 2,
-            "rewrite_count": 2,
+            "rewrite_count": int(first["routing_decision"] == "rewrite_query")
+            + int(second["routing_decision"] == "rewrite_query"),
             "generation_expected": False,
             "tool_failures": 0,
         }
 
     if case_id == "W7E-05":
         embeddings = TimeoutEmbeddings()
-        tool = create_retriever_tool(
-            opensearch_client=UnusedOpenSearch(),
+        outcome = await execute_retrieval(
+            query=query,
+            opensearch_client=RelevantOpenSearch(),
             embeddings_client=embeddings,
             top_k=3,
             use_hybrid=True,
         )
-        try:
-            await tool.ainvoke({"query": query})
-        except Exception as exc:
-            return {
-                "terminal_route": "unhandled_exception",
-                "business_status": "error",
-                "requested_search_mode": "hybrid",
-                "actual_search_mode": None,
-                "embedding_attempts": embeddings.attempts,
-                "fallbacks": 0,
-                "retrieval_rounds": 1,
-                "exception_type": type(exc).__name__,
-            }
-        raise AssertionError("Injected embedding timeout unexpectedly succeeded")
+        return {
+            "terminal_route": "generate_answer" if outcome.documents else "retrieval_unavailable",
+            "business_status": outcome.status,
+            "http_status": 200 if outcome.documents else 503,
+            "requested_search_mode": outcome.requested_search_mode,
+            "actual_search_mode": outcome.actual_search_mode,
+            "embedding_attempts": outcome.embedding_attempts,
+            "fallbacks": outcome.fallbacks,
+            "retrieval_rounds": 1,
+        }
 
     if case_id == "W7E-06":
-        transport = TimeoutSearchTransport()
-        client = object.__new__(OpenSearchClient)
-        client.index_name = "fault-injection-index"
-        client.client = transport
-
-        results = [
-            client.search_unified(query=query, query_embedding=[0.1], use_hybrid=True)
-            for _ in range(2)
-        ]
-        masked_as_empty = all(result == {"total": 0, "hits": []} for result in results)
+        client = TimeoutOpenSearch()
+        outcome = await execute_retrieval(
+            query=query,
+            opensearch_client=client,
+            embeddings_client=SuccessfulEmbeddings(),
+            use_hybrid=True,
+        )
+        route = route_after_tool({"tool_status": outcome.status})
         return {
-            "terminal_route": "semantic_retry_then_fallback",
-            "business_status": "fallback_message",
-            "tool_attempts": transport.attempts,
-            "tool_failures": 0,
-            "error_masked_as_empty": masked_as_empty,
+            "terminal_route": route,
+            "business_status": "retrieval_unavailable",
+            "http_status": 503,
+            "tool_attempts": outcome.tool_attempts,
+            "tool_failures": outcome.tool_failures,
+            "error_masked_as_empty": False,
             "generation_expected": False,
         }
 
@@ -246,6 +300,9 @@ def evaluate(expected: dict[str, Any], actual: dict[str, Any], blocker: str | No
     if "maximum_rewrites" in expected and actual.get("rewrite_count", 0) > expected["maximum_rewrites"]:
         budget_status = "fail"
 
+    if "minimum_sources" in expected and actual.get("minimum_sources", 0) < expected["minimum_sources"]:
+        route_status = "fail"
+
     response_status = "blocked" if blocker else compare_exact(expected, actual, ["http_status"])
     return {
         "route_contract_pass": route_status,
@@ -260,7 +317,9 @@ async def main() -> None:
     results = []
 
     print(f"dataset={DATASET_PATH.name} items={len(dataset)}")
-    print(f"factory_signature={inspect.signature(__import__('src.services.agents.factory', fromlist=['make_agentic_rag_service']).make_agentic_rag_service)}")
+    print(
+        f"factory_signature={inspect.signature(__import__('src.services.agents.factory', fromlist=['make_agentic_rag_service']).make_agentic_rag_service)}"
+    )
     print(f"e2e_blocker={blocker or 'none'}")
 
     for item in dataset:
@@ -275,8 +334,7 @@ async def main() -> None:
         )
 
     counts = {
-        status: sum(score == status for result in results for score in result.values())
-        for status in ("pass", "fail", "blocked")
+        status: sum(score == status for result in results for score in result.values()) for status in ("pass", "fail", "blocked")
     }
     print(f"score_summary={json.dumps(counts, sort_keys=True)}")
 

@@ -51,6 +51,13 @@ class AgenticAskResponse(AskResponse):
     reasoning_steps: List[str] = Field(..., description="Agent's decision-making steps")
     retrieval_attempts: int = Field(..., description="Number of document retrieval attempts")
     trace_id: Optional[str] = Field(None, description="Langfuse trace ID for feedback and debugging")
+    rewritten_query: Optional[str] = Field(None, description="Last rewritten retrieval query")
+    business_status: str = Field("success", description="Machine-readable request outcome")
+    requested_search_mode: Optional[str] = Field(None, description="Search mode requested by the caller")
+    embedding_attempts: int = Field(0, ge=0)
+    tool_attempts: int = Field(0, ge=0)
+    tool_failures: int = Field(0, ge=0)
+    fallbacks: int = Field(0, ge=0)
 
     class Config:
         json_schema_extra = {

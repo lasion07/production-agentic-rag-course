@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from typing import Dict, List
@@ -85,14 +86,25 @@ async def ainvoke_generate_answer_step(
         llm = runtime.context.ollama_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=runtime.context.temperature,
+            num_predict=128,
         )
 
         # Invoke LLM for answer generation
         logger.info("Invoking LLM for answer generation")
-        response = await llm.ainvoke(answer_prompt)
+        if runtime.context.deadline_monotonic is None:
+            response = await llm.ainvoke(answer_prompt)
+        else:
+            remaining = runtime.context.deadline_monotonic - time.monotonic()
+            cleanup_margin_seconds = 10.0
+            if remaining <= cleanup_margin_seconds:
+                raise TimeoutError("request deadline exhausted before generation")
+            response = await asyncio.wait_for(
+                llm.ainvoke(answer_prompt),
+                timeout=remaining - cleanup_margin_seconds,
+            )
 
         # Extract content from response
-        answer = response.content if hasattr(response, 'content') else str(response)
+        answer = response.content if hasattr(response, "content") else str(response)
         logger.info(f"Generated answer of length: {len(answer)} characters")
 
         # Update span with successful result
@@ -114,7 +126,14 @@ async def ainvoke_generate_answer_step(
         logger.error(f"LLM answer generation failed: {e}, falling back to error message")
 
         # Fallback to error message if LLM fails
-        answer = f"I apologize, but I encountered an error while generating the answer: {str(e)}\n\nPlease try again or rephrase your question."
+        if isinstance(e, TimeoutError) and context:
+            answer = f"Generation exceeded its time budget. Here is the most relevant retrieved evidence:\n\n{context[:1500]}"
+        else:
+            answer = (
+                f"I apologize, but I encountered an error while generating the answer: {str(e)}\n\n"
+                "Please try again or rephrase your question."
+            )
+        generation_failed = True
 
         # Update span with error
         if span:
@@ -127,4 +146,12 @@ async def ainvoke_generate_answer_step(
             )
             runtime.context.langfuse_tracer.end_span(span)
 
-    return {"messages": [AIMessage(content=answer)]}
+    business_status = state.get("business_status") or "success"
+    if "generation_failed" in locals() and business_status == "success":
+        business_status = "degraded"
+
+    return {
+        "messages": [AIMessage(content=answer)],
+        "business_status": business_status,
+        "terminal_route": "generate_answer",
+    }

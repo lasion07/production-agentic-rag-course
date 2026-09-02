@@ -1,5 +1,7 @@
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
 
+from langchain_core.documents import Document
 from pydantic import BaseModel, Field
 
 
@@ -74,9 +76,7 @@ class RoutingDecision(BaseModel):
     :param reason: Explanation for the routing decision
     """
 
-    route: Literal["retrieve", "out_of_scope", "generate_answer", "rewrite_query"] = Field(
-        description="Next node to route to"
-    )
+    route: Literal["retrieve", "out_of_scope", "generate_answer", "rewrite_query"] = Field(description="Next node to route to")
     reason: str = Field(default="", description="Reason for routing decision")
 
 
@@ -106,3 +106,19 @@ class ReasoningStep(BaseModel):
     step_name: str = Field(description="Name of the reasoning step")
     description: str = Field(description="Human-readable description")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Step metadata")
+
+
+@dataclass
+class RetrievalOutcome:
+    """Structured boundary between retrieval execution and graph routing."""
+
+    status: Literal["success", "degraded", "error"]
+    documents: List[Document] = field(default_factory=list)
+    requested_search_mode: Literal["hybrid", "bm25"] = "hybrid"
+    actual_search_mode: Literal["hybrid", "bm25", "none"] = "none"
+    error_type: Optional[str] = None
+    retryable: bool = False
+    embedding_attempts: int = 0
+    tool_attempts: int = 0
+    tool_failures: int = 0
+    fallbacks: int = 0

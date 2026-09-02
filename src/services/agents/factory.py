@@ -14,6 +14,7 @@ def make_agentic_rag_service(
     ollama_client: OllamaClient,
     embeddings_client: JinaEmbeddingsClient,
     langfuse_tracer: Optional[LangfuseTracer] = None,
+    model: str = "llama3.2:1b",
     top_k: int = 3,
     use_hybrid: bool = True,
 ) -> AgenticRAGService:
@@ -33,6 +34,7 @@ def make_agentic_rag_service(
     """
     # Create graph configuration with the provided parameters
     graph_config = GraphConfig(
+        model=model,
         top_k=top_k,
         use_hybrid=use_hybrid,
     )

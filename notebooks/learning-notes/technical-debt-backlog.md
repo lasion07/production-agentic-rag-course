@@ -8,7 +8,7 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 
 - `P1`: ảnh hưởng correctness/availability production.
 - `P2`: ảnh hưởng reliability, observability hoặc hiệu năng.
-- Trạng thái hiện tại: `Deferred until course completion`.
+- Trạng thái được cập nhật theo từng mục sau đợt Week 7.5 hardening.
 
 ## Week 7.1–7.2
 
@@ -23,18 +23,21 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Source: `src/services/agents/agentic_rag.py`.
 - Hiện tại: missing decision mặc định `generate_answer`; lần retrieval cuối vẫn có thể rewrite trước khi phát hiện hết attempts.
 - Hướng sửa: fail-safe router kiểm tra evidence và attempts; test missing/contradictory state.
+- Trạng thái: **Resolved** — deterministic router bắt buộc evidence và chặn rewrite sau round cuối.
 
 ### TD-W7-03 — Evidence và API sources có thể lệch nhau — P1
 
 - Source: agent ToolMessage/grading flow và `_extract_sources()`.
 - Hiện tại: generation có thể đọc tool context trong khi `relevant_sources` không được cập nhật, làm API trả sources rỗng.
 - Hướng sửa: một canonical relevant-document set sinh context, citation allowlist và API sources.
+- Trạng thái: **Partially resolved** — `relevant_documents` sinh generation context, source list và actual chunk count; citation allowlist/claim validation vẫn còn mở.
 
 ### TD-W7-04 — API báo requested K thay vì actual chunks — P2
 
 - Source: `src/routers/agentic_ask.py`.
 - Hiện tại: `chunks_used=request.top_k` dù số chunks thực tế có thể khác.
 - Hướng sửa: trả actual evidence count từ final state.
+- Trạng thái: **Resolved**.
 
 ## Week 7.3
 
@@ -43,43 +46,95 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Source: `src/services/opensearch/client.py::search_unified`.
 - Hiện tại: catch-all trả empty result, khiến graph hiểu lỗi hạ tầng là semantic miss.
 - Hướng sửa: typed error/structured outcome; test zero-result khác timeout.
+- Trạng thái: **Resolved** — `search_unified` re-raise; structured executor phân biệt empty success và dependency error.
 
 ### TD-W7-06 — Embedding failure làm graph abort — P1
 
 - Source: `src/services/embeddings/jina_client.py`, `src/services/agents/tools.py`.
 - Hiện tại: Jina HTTP errors propagate qua ToolNode và endpoint có thể trả 500.
 - Hướng sửa: bounded client retry, typed errors và BM25 fallback.
+- Trạng thái: **Resolved** — tối đa hai embedding attempts, phân loại retryable và BM25 fallback.
 
 ### TD-W7-07 — Thiếu post-tool failure router — P1
 
 - Source: `src/services/agents/agentic_rag.py`.
 - Hiện tại: `tool_retrieve` luôn đi `grade_documents`; chưa có success/degraded/error contract.
 - Hướng sửa: structured `RetrievalResult` và deterministic `route_after_tool`.
+- Trạng thái: **Resolved** — error không còn đi vào grading.
 
 ### TD-W7-08 — Counter trộn semantic round và physical attempt — P2
 
 - Source: `src/services/agents/nodes/retrieve_node.py`.
 - Hiện tại: counter tăng khi tạo tool call, không cho biết dependency đã chạy thành công chưa.
 - Hướng sửa: tách retrieval rounds, embedding attempts, search attempts, failures và fallbacks.
+- Trạng thái: **Resolved**.
 
 ### TD-W7-09 — Sync OpenSearch trong async tool — P2
 
 - Source: `src/services/agents/tools.py`, `src/services/opensearch/client.py`.
 - Hiện tại: synchronous search có thể block event loop.
 - Hướng sửa: async client hoặc bounded worker thread; kiểm thử timeout/cancellation.
+- Trạng thái: **Mitigated** — sync search được đưa sang worker thread và có await timeout; chuyển hẳn sang async client vẫn còn mở.
 
 ### TD-W7-10 — Thiếu shared deadline và retry budget — P1
 
 - Source: agent runtime context và dependency clients.
 - Hiện tại: chưa reserve finish/generation time và chưa ngăn retry amplification.
 - Hướng sửa: request deadline, per-attempt timeout, shared call budget và retry metrics.
+- Trạng thái: **Resolved for bounded execution** — có outer 120s deadline, per-attempt timeout, generation reserve và HTTP 504 contract. Tối ưu phase budgets/latency vẫn còn mở.
 
 ### TD-W7-11 — Failure tests chưa đủ — P2
 
 - Source: `tests/unit/services/agents/test_tools.py`, `test_nodes.py`, `test_agentic_rag.py`.
 - Hiện tại: chủ yếu test success/empty result và graph exception tổng quát.
 - Hướng sửa: fault injection cho timeout, 401, 429, 503, fallback, deadline, max-call invariant và circuit breaker.
+- Trạng thái: **Partially resolved** — đã có timeout, `429 Retry-After`, zero-hit, fallback và max-call tests; circuit breaker chưa triển khai.
+
+## Week 7.4
+
+### TD-W7-12 — Agentic dependency construction bị lỗi — P1
+
+- Source: `src/dependencies.py`, `src/services/agents/factory.py`.
+- Hiện tại: dependency truyền `model`, factory không nhận tham số này; mọi `/ask-agentic` request trả 500 trước guardrail/trace.
+- Hướng sửa: thống nhất factory contract và thêm endpoint readiness smoke test.
+- Trạng thái: **Resolved** — factory nhận model và service construct được trong regression/runtime.
+
+### TD-W7-13 — Request parameters bị bỏ qua và response báo sai execution — P1
+
+- Source: `src/routers/agentic_ask.py`.
+- Hiện tại: `model/top_k/use_hybrid/categories` không được truyền đầy đủ; response suy ra chunks/mode từ request thay vì actual execution.
+- Hướng sửa: typed execution config, trả actual mode/chunk count; API tests assert forwarding.
+- Trạng thái: **Resolved** — request config truyền xuyên suốt; response lấy actual execution.
+
+### TD-W7-14 — Agentic response schema làm mất field — P2
+
+- Source: `src/schemas/api/ask.py`, `src/routers/agentic_ask.py`.
+- Hiện tại: service có `rewritten_query` nhưng `AgenticAskResponse` không khai báo nên FastAPI loại khỏi response.
+- Hướng sửa: thống nhất service/API schema và contract tests cho mọi response field.
+- Trạng thái: **Resolved**.
+
+### TD-W7-15 — Shared agent test fixtures bị thiếu — P2
+
+- Source: `tests/conftest.py`, agent unit tests.
+- Hiện tại: 22 setup errors do fixtures được tham chiếu nhưng không định nghĩa.
+- Hướng sửa: bổ sung typed shared fixtures và tách setup health khỏi behavior assertions.
+- Trạng thái: **Resolved** — agent/API tests chạy hermetic.
+
+### TD-W7-16 — Health chưa kiểm tra agentic endpoint readiness — P2
+
+- Source: health router/startup smoke tests.
+- Hiện tại: backend services healthy nhưng dependency construction của agentic endpoint lỗi.
+- Hướng sửa: readiness check construct service hoặc chạy bounded internal smoke path.
+
+### TD-W7-17 — Ollama production client thiếu LangChain adapter — P1
+
+- Source: `src/services/ollama/client.py`, toàn bộ agent LLM nodes.
+- Hiện tại khi phát hiện: mocks có `get_langchain_model()` nhưng production client không có, làm guardrail fallback và reject nhầm query hợp lệ.
+- Hướng sửa: adapter `ChatOllama` dùng chung host/timeout với client và contract test.
+- Trạng thái: **Resolved**.
 
 ## Trạng thái
 
-Tất cả mục trên: **Deferred until course completion**.
+- Đã giải quyết: TD-W7-02, 04, 05, 06, 07, 08, 10, 12, 13, 14, 15, 17.
+- Đã giảm rủi ro nhưng còn việc: TD-W7-03, 09, 11.
+- Chưa triển khai: TD-W7-01, 16.

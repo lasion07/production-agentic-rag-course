@@ -1,10 +1,10 @@
+import asyncio
 import logging
 import time
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
 from src.services.ollama.client import OllamaClient
@@ -16,19 +16,24 @@ from .nodes import (
     ainvoke_generate_answer_step,
     ainvoke_grade_documents_step,
     ainvoke_guardrail_step,
+    ainvoke_insufficient_evidence_step,
     ainvoke_out_of_scope_step,
+    ainvoke_retrieval_unavailable_step,
     ainvoke_retrieve_step,
     ainvoke_rewrite_query_step,
+    ainvoke_tool_retrieve_step,
     continue_after_guardrail,
+    route_after_grading,
+    route_after_retrieve,
+    route_after_tool,
 )
 from .state import AgentState
-from .tools import create_retriever_tool
 
 logger = logging.getLogger(__name__)
 
 
 class AgenticRAGService:
-    """Agentic RAG service 
+    """Agentic RAG service
 
     This implementation uses:
     - context_schema for dependency injection
@@ -83,24 +88,17 @@ class AgenticRAGService:
         # Create workflow with AgentState and Context schema
         workflow = StateGraph(AgentState, context_schema=Context)
 
-        # Create tools (these still need to be created upfront for ToolNode)
-        retriever_tool = create_retriever_tool(
-            opensearch_client=self.opensearch,
-            embeddings_client=self.embeddings,
-            top_k=self.graph_config.top_k,
-            use_hybrid=self.graph_config.use_hybrid,
-        )
-        tools = [retriever_tool]
-
         # Add nodes (just function references - no closures needed!)
         logger.info("Adding nodes to workflow graph")
         workflow.add_node("guardrail", ainvoke_guardrail_step)
         workflow.add_node("out_of_scope", ainvoke_out_of_scope_step)
         workflow.add_node("retrieve", ainvoke_retrieve_step)
-        workflow.add_node("tool_retrieve", ToolNode(tools))
+        workflow.add_node("tool_retrieve", ainvoke_tool_retrieve_step)
         workflow.add_node("grade_documents", ainvoke_grade_documents_step)
         workflow.add_node("rewrite_query", ainvoke_rewrite_query_step)
         workflow.add_node("generate_answer", ainvoke_generate_answer_step)
+        workflow.add_node("insufficient_evidence", ainvoke_insufficient_evidence_step)
+        workflow.add_node("retrieval_unavailable", ainvoke_retrieval_unavailable_step)
 
         # Add edges
         logger.info("Configuring graph edges and routing logic")
@@ -124,23 +122,30 @@ class AgenticRAGService:
         # Retrieve node creates tool call
         workflow.add_conditional_edges(
             "retrieve",
-            tools_condition,
+            route_after_retrieve,
             {
-                "tools": "tool_retrieve",
-                END: END,
+                "tool_retrieve": "tool_retrieve",
+                "insufficient_evidence": "insufficient_evidence",
             },
         )
 
-        # After tool retrieval → grade documents
-        workflow.add_edge("tool_retrieve", "grade_documents")
+        workflow.add_conditional_edges(
+            "tool_retrieve",
+            route_after_tool,
+            {
+                "grade_documents": "grade_documents",
+                "retrieval_unavailable": "retrieval_unavailable",
+            },
+        )
 
         # After grading → route based on relevance
         workflow.add_conditional_edges(
             "grade_documents",
-            lambda state: state.get("routing_decision", "generate_answer"),
+            route_after_grading,
             {
                 "generate_answer": "generate_answer",
                 "rewrite_query": "rewrite_query",
+                "insufficient_evidence": "insufficient_evidence",
             },
         )
 
@@ -149,6 +154,8 @@ class AgenticRAGService:
 
         # After answer generation → done
         workflow.add_edge("generate_answer", END)
+        workflow.add_edge("insufficient_evidence", END)
+        workflow.add_edge("retrieval_unavailable", END)
 
         # Compile graph
         logger.info("Compiling LangGraph workflow")
@@ -162,6 +169,9 @@ class AgenticRAGService:
         query: str,
         user_id: str = "api_user",
         model: Optional[str] = None,
+        top_k: Optional[int] = None,
+        use_hybrid: Optional[bool] = None,
+        categories: Optional[List[str]] = None,
     ) -> dict:
         """Ask a question using agentic RAG.
 
@@ -172,6 +182,8 @@ class AgenticRAGService:
         :raises ValueError: If query is empty
         """
         model_to_use = model or self.graph_config.model
+        effective_top_k = top_k if top_k is not None else self.graph_config.top_k
+        effective_use_hybrid = use_hybrid if use_hybrid is not None else self.graph_config.use_hybrid
 
         logger.info("=" * 80)
         logger.info("Starting Agentic RAG Request")
@@ -191,8 +203,9 @@ class AgenticRAGService:
                     "environment": self.graph_config.settings.environment,
                     "service": "agentic-rag",
                     "user_id": user_id,
-                    "top_k": self.graph_config.top_k,
-                    "use_hybrid": self.graph_config.use_hybrid,
+                    "top_k": effective_top_k,
+                    "use_hybrid": effective_use_hybrid,
+                    "categories": categories,
                     "model": model_to_use,
                 }
                 with self.langfuse_tracer.trace_attributes(
@@ -207,14 +220,23 @@ class AgenticRAGService:
                         input_data={"query": self.langfuse_tracer.safe_content(query)},
                         metadata=metadata,
                     ) as trace:
-                        return await self._run_workflow(query, model_to_use, user_id, trace)
-            return await self._run_workflow(query, model_to_use, user_id, None)
+                        return await self._run_workflow(query, model_to_use, user_id, trace, top_k, use_hybrid, categories)
+            return await self._run_workflow(query, model_to_use, user_id, None, top_k, use_hybrid, categories)
         except Exception as e:
             logger.error(f"Error in Agentic RAG execution: {str(e)}")
             logger.exception("Full traceback:")
             raise
 
-    async def _run_workflow(self, query: str, model_to_use: str, user_id: str, trace) -> dict:
+    async def _run_workflow(
+        self,
+        query: str,
+        model_to_use: str,
+        user_id: str,
+        trace,
+        top_k: Optional[int],
+        use_hybrid: Optional[bool],
+        categories: Optional[List[str]],
+    ) -> dict:
         """Execute the workflow with the given trace context."""
         try:
             start_time = time.time()
@@ -227,6 +249,8 @@ class AgenticRAGService:
                 "retrieval_attempts": 0,
                 "guardrail_result": None,
                 "routing_decision": None,
+                "retrieved_documents": [],
+                "relevant_documents": [],
                 "sources": None,
                 "relevant_sources": [],
                 "relevant_tool_artefacts": None,
@@ -234,7 +258,21 @@ class AgenticRAGService:
                 "metadata": {},
                 "original_query": None,
                 "rewritten_query": None,
+                "tool_status": None,
+                "requested_search_mode": "hybrid"
+                if (use_hybrid if use_hybrid is not None else self.graph_config.use_hybrid)
+                else "bm25",
+                "actual_search_mode": "none",
+                "business_status": None,
+                "terminal_route": None,
+                "embedding_attempts": 0,
+                "tool_attempts": 0,
+                "tool_failures": 0,
+                "fallbacks": 0,
             }
+
+            effective_top_k = top_k if top_k is not None else self.graph_config.top_k
+            effective_use_hybrid = use_hybrid if use_hybrid is not None else self.graph_config.use_hybrid
 
             # Runtime context (dependencies)
             runtime_context = Context(
@@ -246,8 +284,16 @@ class AgenticRAGService:
                 langfuse_enabled=self.langfuse_tracer is not None and self.langfuse_tracer.client is not None,
                 model_name=model_to_use,
                 temperature=self.graph_config.temperature,
-                top_k=self.graph_config.top_k,
+                top_k=effective_top_k,
+                use_hybrid=effective_use_hybrid,
+                categories=categories,
                 max_retrieval_attempts=self.graph_config.max_retrieval_attempts,
+                max_embedding_attempts=self.graph_config.max_embedding_attempts,
+                max_search_attempts=self.graph_config.max_search_attempts,
+                embedding_attempt_timeout_seconds=self.graph_config.embedding_attempt_timeout_seconds,
+                search_attempt_timeout_seconds=self.graph_config.search_attempt_timeout_seconds,
+                deadline_monotonic=time.monotonic() + self.graph_config.total_deadline_seconds,
+                generation_reserve_seconds=self.graph_config.generation_reserve_seconds,
                 guardrail_threshold=self.graph_config.guardrail_threshold,
             )
 
@@ -263,11 +309,43 @@ class AgenticRAGService:
                 except Exception as e:
                     logger.warning(f"Failed to create CallbackHandler: {e}")
 
-            result = await self.graph.ainvoke(
-                state_input,
-                config=config,
-                context=runtime_context,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    self.graph.ainvoke(
+                        state_input,
+                        config=config,
+                        context=runtime_context,
+                    ),
+                    timeout=self.graph_config.total_deadline_seconds,
+                )
+            except TimeoutError:
+                execution_time = time.time() - start_time
+                if trace:
+                    trace.update(
+                        output={"business_status": "deadline_exceeded"},
+                        level="ERROR",
+                        status_message="Agent request deadline exceeded",
+                    )
+                return {
+                    "query": query,
+                    "answer": "The request exceeded its processing deadline. Please try again.",
+                    "sources": [],
+                    "reasoning_steps": ["Stopped because the total request deadline was exceeded"],
+                    "retrieval_attempts": 0,
+                    "rewritten_query": None,
+                    "execution_time": execution_time,
+                    "guardrail_score": None,
+                    "business_status": "deadline_exceeded",
+                    "terminal_route": "deadline_exceeded",
+                    "requested_search_mode": "hybrid" if effective_use_hybrid else "bm25",
+                    "actual_search_mode": "none",
+                    "chunks_used": 0,
+                    "embedding_attempts": 0,
+                    "tool_attempts": 0,
+                    "tool_failures": 0,
+                    "fallbacks": 0,
+                    "trace_id": getattr(trace, "id", None) if trace else None,
+                }
 
             execution_time = time.time() - start_time
             logger.info(f"✓ Graph execution completed in {execution_time:.2f}s")
@@ -307,6 +385,16 @@ class AgenticRAGService:
                 "rewritten_query": result.get("rewritten_query"),
                 "execution_time": execution_time,
                 "guardrail_score": result.get("guardrail_result").score if result.get("guardrail_result") else None,
+                "business_status": result.get("business_status") or "success",
+                "terminal_route": result.get("terminal_route"),
+                "requested_search_mode": result.get("requested_search_mode"),
+                "actual_search_mode": result.get("actual_search_mode", "none"),
+                "chunks_used": len(result.get("relevant_documents", [])),
+                "embedding_attempts": result.get("embedding_attempts", 0),
+                "tool_attempts": result.get("tool_attempts", 0),
+                "tool_failures": result.get("tool_failures", 0),
+                "fallbacks": result.get("fallbacks", 0),
+                "trace_id": getattr(trace, "id", None) if trace else None,
             }
 
         except Exception as e:
@@ -332,16 +420,16 @@ class AgenticRAGService:
         final_message = messages[-1]
         return final_message.content if hasattr(final_message, "content") else str(final_message)
 
-    def _extract_sources(self, result: dict) -> List[dict]:
+    def _extract_sources(self, result: dict) -> List[str]:
         """Extract sources from graph result."""
         sources = []
         relevant_sources = result.get("relevant_sources", [])
 
         for source in relevant_sources:
-            if hasattr(source, "to_dict"):
-                sources.append(source.to_dict())
-            elif isinstance(source, dict):
-                sources.append(source)
+            if hasattr(source, "url") and source.url:
+                sources.append(source.url)
+            elif isinstance(source, dict) and source.get("url"):
+                sources.append(source["url"])
 
         return sources
 
@@ -365,7 +453,8 @@ class AgenticRAGService:
         if result.get("rewritten_query"):
             steps.append("Rewritten query for better results")
 
-        steps.append("Generated answer from context")
+        if result.get("terminal_route") == "generate_answer":
+            steps.append("Generated answer from context")
 
         return steps
 
@@ -394,8 +483,7 @@ class AgenticRAGService:
             logger.error(f"Failed to generate visualization - missing dependencies: {e}")
             logger.error("Install with: pip install pygraphviz or apt-get install graphviz")
             raise ImportError(
-                "Graph visualization requires pygraphviz. "
-                "Install with: pip install pygraphviz (requires graphviz system package)"
+                "Graph visualization requires pygraphviz. Install with: pip install pygraphviz (requires graphviz system package)"
             ) from e
         except Exception as e:
             logger.error(f"Failed to generate graph visualization: {e}")
