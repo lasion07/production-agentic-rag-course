@@ -9,3 +9,4 @@ async def test_health_check(client):
     assert "service_name" in data
     assert "version" in data
     assert "services" in data
+    assert data["services"]["agentic_rag"]["status"] == "healthy"

@@ -8,6 +8,7 @@ from src.config import get_settings
 from src.db.factory import make_database
 from src.routers import agentic_ask, hybrid_search, ping
 from src.routers.ask import ask_router, stream_router
+from src.services.agents.factory import make_agentic_rag_service
 from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
 from src.services.embeddings.factory import make_embeddings_service
@@ -70,6 +71,23 @@ async def lifespan(app: FastAPI):
     app.state.llm_client = make_llm_client()
     app.state.langfuse_tracer = make_langfuse_tracer()
     app.state.cache_client = make_cache_client(settings)
+
+    # Construct the same service used by /ask-agentic during startup. A
+    # dependency-construction failure must be visible to readiness and must not
+    # be rediscovered independently by every user request.
+    try:
+        app.state.agentic_rag_service = make_agentic_rag_service(
+            opensearch_client=app.state.opensearch_client,
+            llm_client=app.state.llm_client,
+            embeddings_client=app.state.embeddings_service,
+            langfuse_tracer=app.state.langfuse_tracer,
+            model=settings.selected_llm_model,
+        )
+        app.state.agentic_rag_error = None
+    except Exception as exc:
+        app.state.agentic_rag_service = None
+        app.state.agentic_rag_error = f"{type(exc).__name__}: {str(exc)[:300]}"
+        logger.exception("Agentic RAG service failed readiness construction")
     logger.info(
         "Services initialized: arXiv API client, PDF parser, OpenSearch, Embeddings, "
         "LLM provider=%s model=%s, Langfuse, Cache",

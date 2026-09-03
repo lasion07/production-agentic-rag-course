@@ -14,6 +14,8 @@ def settings(**overrides):
         "openai_timeout": 12,
         "openai_max_retries": 2,
         "openai_reasoning_effort": "low",
+        "openai_allowed_models": ["gpt-5.4-mini-2026-03-17"],
+        "openai_max_output_tokens": 512,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -53,6 +55,22 @@ class FakeStream:
 def test_requires_api_key():
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
         OpenAIClient(settings(openai_api_key=SecretStr("")))
+
+
+def test_rejects_model_outside_allowlist_before_api_call():
+    with patch("src.services.llm.openai_client.AsyncOpenAI"):
+        client = OpenAIClient(settings())
+
+    with pytest.raises(ValueError, match="not allowed"):
+        client.get_langchain_model("gpt-5.4")
+
+
+def test_rejects_output_budget_above_configured_cap():
+    with patch("src.services.llm.openai_client.AsyncOpenAI"):
+        client = OpenAIClient(settings(openai_max_output_tokens=256))
+
+    with pytest.raises(ValueError, match="exceeds configured cap=256"):
+        client.get_langchain_model("gpt-5.4-mini-2026-03-17", num_predict=512)
 
 
 def test_langchain_adapter_uses_responses_api_without_exposing_key():

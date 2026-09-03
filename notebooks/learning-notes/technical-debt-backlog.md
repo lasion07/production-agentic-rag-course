@@ -125,6 +125,7 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Source: health router/startup smoke tests.
 - Hiện tại: backend services healthy nhưng dependency construction của agentic endpoint lỗi.
 - Hướng sửa: readiness check construct service hoặc chạy bounded internal smoke path.
+- Trạng thái: **Resolved** — service được construct một lần lúc startup; health báo degraded và endpoint trả `503/agentic_unavailable` nếu graph không sẵn sàng.
 
 ### TD-W7-17 — Ollama production client thiếu LangChain adapter — P1
 
@@ -139,7 +140,15 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Đã có: provider-neutral contract, Responses API, streaming, structured output, token usage, provider-aware health và model-aware cache identity.
 - Đã kiểm chứng: full E2E trên ba public arXiv papers và Langfuse trace audit; privacy masking, trace ID, business metadata và generation cost không bị đếm đôi.
 - Còn lại: model allowlist và cost budget/alert.
-- Trạng thái: **In progress**.
+- Trạng thái: **Partially resolved** — model snapshot allowlist và hard cap output tokens đã được thực thi fail-fast; cost alert trên Langfuse vẫn còn mở.
+
+### TD-W7-20 — Câu trả lời bỏ sót quantitative claim — P2
+
+- Source: answer-generation prompt và E2E query hỏi range.
+- Hiện tượng: câu trả lời mô tả đúng phương pháp nhưng bỏ sót range số liệu dù user hỏi trực tiếp.
+- Hướng sửa: prompt rule tổng quát cho số liệu/đơn vị, candidate retrieval sâu hơn, rerank/context selection và một live answer-contract regression case.
+- Bằng chứng: hai live runs đều lấy đúng paper nhưng thiếu `56.4–68.2`; Langfuse trace `230f22f8df72e3ec0d0f2c79ef5bb73a` xác nhận hai số không có trong generation input, nên model đã từ chối bịa đúng contract.
+- Trạng thái: **Open, regression đỏ** — prompt đã sửa và RRF có `pagination_depth`, nhưng cần reranker/context selector để quantitative chunk ổn định vào final K.
 
 ### TD-W7-19 — API image vẫn nặng dù đã bỏ local inference — P3
 
@@ -152,4 +161,6 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 
 - Đã giải quyết: TD-W7-02, 04, 05, 06, 07, 08, 10, 12, 13, 14, 15, 17.
 - Đã giảm rủi ro nhưng còn việc: TD-W7-03, 09, 11.
-- Chưa triển khai: TD-W7-01, 16.
+- Chưa triển khai: TD-W7-01.
+- Đang thực hiện: TD-W7-18.
+- Regression đỏ cần xử lý tiếp: TD-W7-20.

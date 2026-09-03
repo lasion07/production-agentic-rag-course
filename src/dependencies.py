@@ -14,7 +14,6 @@ else:
 from src.config import Settings
 from src.db.interfaces.base import BaseDatabase
 from src.services.agents.agentic_rag import AgenticRAGService
-from src.services.agents.factory import make_agentic_rag_service
 from src.services.arxiv.client import ArxivClient
 from src.services.cache.client import CacheClient
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
@@ -103,21 +102,20 @@ CacheDep = Annotated[CacheClient | None, Depends(get_cache_client)]
 TelegramDep = Annotated[Optional[TelegramBot], Depends(get_telegram_service)]
 
 
-def get_agentic_rag_service(
-    opensearch: OpenSearchDep,
-    llm: LLMDep,
-    embeddings: EmbeddingsDep,
-    langfuse: LangfuseDep,
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> AgenticRAGService:
-    """Get agentic RAG service."""
-    return make_agentic_rag_service(
-        opensearch_client=opensearch,
-        llm_client=llm,
-        embeddings_client=embeddings,
-        langfuse_tracer=langfuse,
-        model=settings.selected_llm_model,
-    )
+def get_agentic_rag_service(request: Request) -> AgenticRAGService:
+    """Return the startup-validated agent service or fail as unavailable."""
+    service = getattr(request.app.state, "agentic_rag_service", None)
+    if service is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "business_status": "agentic_unavailable",
+                "message": getattr(request.app.state, "agentic_rag_error", "Agentic RAG is not ready"),
+            },
+        )
+    return service
 
 
 AgenticRAGDep = Annotated[AgenticRAGService, Depends(get_agentic_rag_service)]

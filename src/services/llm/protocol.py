@@ -13,6 +13,8 @@ class LLMClient(Protocol):
     provider_name: str
     default_model: str
 
+    def validate_model(self, model: Optional[str] = None) -> str: ...
+
     def get_langchain_model(
         self,
         model: str,

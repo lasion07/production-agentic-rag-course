@@ -22,7 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.dependencies import get_agentic_rag_service
+from src.services.agents.factory import make_agentic_rag_service
 from src.services.agents.models import GradeDocuments, GuardrailScoring
 from src.services.agents.nodes.grade_documents_node import (
     ainvoke_grade_documents_step,
@@ -160,12 +160,12 @@ async def grade(query: str, binary_score: str, retrieval_attempts: int = 1) -> d
 
 def dependency_construction_blocker() -> str | None:
     try:
-        get_agentic_rag_service(
-            opensearch=object(),
-            llm=object(),
-            embeddings=object(),
-            langfuse=None,
-            settings=SimpleNamespace(selected_llm_model="test-model"),
+        make_agentic_rag_service(
+            opensearch_client=object(),
+            llm_client=object(),
+            embeddings_client=object(),
+            langfuse_tracer=None,
+            model="test-model",
         )
     except Exception as exc:
         return f"{type(exc).__name__}: {exc}"

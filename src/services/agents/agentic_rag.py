@@ -181,7 +181,7 @@ class AgenticRAGService:
         :returns: Dictionary with answer, sources, reasoning steps, and metadata
         :raises ValueError: If query is empty
         """
-        model_to_use = model or self.graph_config.model
+        model_to_use = self.llm.validate_model(model or self.graph_config.model)
         effective_top_k = top_k if top_k is not None else self.graph_config.top_k
         effective_use_hybrid = use_hybrid if use_hybrid is not None else self.graph_config.use_hybrid
 

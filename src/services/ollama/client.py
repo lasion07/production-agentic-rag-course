@@ -25,6 +25,10 @@ class OllamaClient:
         self.prompt_builder = RAGPromptBuilder()
         self.response_parser = ResponseParser()
 
+    def validate_model(self, model: Optional[str] = None) -> str:
+        """Resolve the requested local model under the provider contract."""
+        return model or self.default_model
+
     def get_langchain_model(
         self,
         model: str,
@@ -38,7 +42,7 @@ class OllamaClient:
         """
 
         return ChatOllama(
-            model=model,
+            model=self.validate_model(model),
             base_url=self.base_url,
             temperature=temperature,
             keep_alive="10m",

@@ -109,6 +109,7 @@ User Question: {question}
 Instructions:
 - Provide a comprehensive, accurate answer based ONLY on the retrieved papers
 - Cite specific papers when making claims (use paper titles or arxiv IDs)
+- When the question asks for a quantity, range, percentage, comparison, or other measured result, preserve the exact values and units stated in the evidence; if they are absent, say that the retrieved evidence does not provide them
 - If the papers don't contain enough information to fully answer the question, acknowledge this
 - Structure your answer clearly and professionally
 - Focus on the key insights and findings from the papers

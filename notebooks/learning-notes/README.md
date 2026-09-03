@@ -16,8 +16,9 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 - **Bằng chứng Week 6.4:** Langfuse Cloud nhận trace RAG thật gồm 6 observations; generation 1.620 tokens; privacy audit pass; API container healthy
 - **Đã hoàn thành trong Week 7:** Bài 7.1 — Từ fixed pipeline đến bounded agent loop; Bài 7.2 — Agent state, nodes, conditional edges và routing; Bài 7.3 — Tool execution, retries và agent failure handling; Bài 7.4 — Agentic RAG practical, fault injection và evaluation
 - **Bằng chứng Week 7.4:** 6-case regression dataset đã upload Langfuse; local fault injection đạt pass=3, fail=9, blocked=6 và tái hiện đúng error masking/fallback gaps
-- **Bằng chứng Week 7.6:** OpenAI full E2E HTTP 200/10,31s; hybrid → 3 chunks → 1 deduplicated source; Langfuse có 22 observations, 4.941 tokens, ~$0,00537 và toàn bộ I/O được redacted
-- **Bài tiếp theo:** Citation allowlist/claim validation và tối ưu agent latency theo phase budgets
+- **Bằng chứng Week 7.6:** OpenAI full E2E HTTP 200/10,31s; Langfuse có 22 observations, 4.941 tokens, ~$0,00537; raw public-paper content capture đã được phê duyệt và kiểm chứng ở trace riêng
+- **Technical-debt verification:** 6 fault cases đạt 18/18; quantitative answer case đang đỏ vì claim chunk chưa ổn định vào final context
+- **Bài tiếp theo:** Candidate reranking/context selection, citation allowlist/claim validation và cost alert
 - **Technical debt:** Các lỗi source được hoãn có chủ đích đến sau khóa học và theo dõi trong backlog riêng
 - **Cần ôn lại:** ingestion ordering, serving dependencies và BM25 fallback
 

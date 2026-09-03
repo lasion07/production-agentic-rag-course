@@ -1,0 +1,20 @@
+[
+  {
+    "input": {
+      "query": "What repair success range does the diffusion code-repair paper report, and how is the repair performed?",
+      "top_k": 3,
+      "use_hybrid": true
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "required_answer_fragments": ["56.4", "68.2"],
+      "required_source_fragments": ["2508.11110"]
+    },
+    "metadata": {
+      "case_id": "W7A-01",
+      "case_type": "quantitative_claim_grounding",
+      "evaluation_layer": "answer_contract"
+    }
+  }
+]

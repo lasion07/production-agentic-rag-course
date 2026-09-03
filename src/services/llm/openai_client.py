@@ -30,6 +30,8 @@ class OpenAIClient:
         self.timeout = float(settings.openai_timeout)
         self.max_retries = int(settings.openai_max_retries)
         self.reasoning_effort = settings.openai_reasoning_effort
+        self.allowed_models = frozenset(settings.openai_allowed_models)
+        self.max_output_tokens = int(settings.openai_max_output_tokens)
         self.prompt_builder = RAGPromptBuilder()
         self.client = AsyncOpenAI(
             api_key=api_key,
@@ -38,6 +40,15 @@ class OpenAIClient:
             max_retries=self.max_retries,
         )
 
+    def validate_model(self, model: Optional[str] = None) -> str:
+        """Resolve a model and enforce the deployment allowlist."""
+        model_name = model or self.default_model
+        if model_name not in self.allowed_models:
+            raise ValueError(
+                f"OpenAI model '{model_name}' is not allowed; choose one of {sorted(self.allowed_models)}"
+            )
+        return model_name
+
     def get_langchain_model(
         self,
         model: str,
@@ -45,11 +56,14 @@ class OpenAIClient:
         **kwargs: Any,
     ) -> ChatOpenAI:
         """Create the LangChain adapter used by LangGraph nodes."""
+        model_name = self.validate_model(model)
         num_predict = kwargs.pop("num_predict", None)
         if num_predict is not None and "max_tokens" not in kwargs:
             kwargs["max_tokens"] = num_predict
+        if "max_tokens" in kwargs:
+            kwargs["max_tokens"] = self._bounded_output_tokens(kwargs["max_tokens"])
         params: Dict[str, Any] = {
-            "model": model or self.default_model,
+            "model": model_name,
             "api_key": self.client.api_key,
             "base_url": self.base_url,
             "timeout": self.timeout,
@@ -88,7 +102,7 @@ class OpenAIClient:
         """Generate text and normalize it to the existing serving contract."""
         if stream:
             raise ValueError("Use generate_stream() for streaming responses")
-        model_name = model or self.default_model
+        model_name = self.validate_model(model)
         try:
             response = await self.client.responses.create(
                 model=model_name,
@@ -116,7 +130,7 @@ class OpenAIClient:
         **kwargs: Any,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Stream text deltas while preserving the existing chunk contract."""
-        model_name = model or self.default_model
+        model_name = self.validate_model(model)
         try:
             stream = await self.client.responses.create(
                 model=model_name,
@@ -151,7 +165,7 @@ class OpenAIClient:
         use_structured_output: bool = False,
     ) -> Dict[str, Any]:
         """Generate a grounded RAG response using the configured OpenAI model."""
-        model_name = model or self.default_model
+        model_name = self.validate_model(model)
         prompt = self.prompt_builder.create_rag_prompt(query, chunks)
         try:
             if use_structured_output:
@@ -198,9 +212,19 @@ class OpenAIClient:
         async for chunk in self.generate_stream(model=model, prompt=prompt, num_predict=128):
             yield chunk
 
-    @staticmethod
-    def _max_output_tokens(kwargs: Dict[str, Any]) -> int:
-        return int(kwargs.get("max_output_tokens") or kwargs.get("max_tokens") or kwargs.get("num_predict") or 128)
+    def _max_output_tokens(self, kwargs: Dict[str, Any]) -> int:
+        requested = kwargs.get("max_output_tokens") or kwargs.get("max_tokens") or kwargs.get("num_predict") or 128
+        return self._bounded_output_tokens(requested)
+
+    def _bounded_output_tokens(self, requested: Any) -> int:
+        value = int(requested)
+        if value < 1:
+            raise ValueError("max_output_tokens must be positive")
+        if value > self.max_output_tokens:
+            raise ValueError(
+                f"Requested max_output_tokens={value} exceeds configured cap={self.max_output_tokens}"
+            )
+        return value
 
     @staticmethod
     def _usage_metadata(response: Any) -> Dict[str, int]:

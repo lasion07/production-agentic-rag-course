@@ -250,14 +250,25 @@ class OpenSearchClient:
         self, query: str, query_embedding: List[float], size: int, categories: Optional[List[str]], min_score: float
     ) -> Dict[str, Any]:
         """Native OpenSearch hybrid search with RRF pipeline."""
+        candidate_size = size * self.settings.opensearch.hybrid_search_size_multiplier
         builder = QueryBuilder(
-            query=query, size=size * 2, from_=0, categories=categories, latest_papers=False, search_chunks=True
+            query=query, size=candidate_size, from_=0, categories=categories, latest_papers=False, search_chunks=True
         )
         bm25_search_body = builder.build()
 
         bm25_query = bm25_search_body["query"]
 
-        hybrid_query = {"hybrid": {"queries": [bm25_query, {"knn": {"embedding": {"vector": query_embedding, "k": size * 2}}}]}}
+        hybrid_query = {
+            "hybrid": {
+                # Decouple the number of candidates fused by RRF from the
+                # smaller final K returned to downstream generation.
+                "pagination_depth": candidate_size,
+                "queries": [
+                    bm25_query,
+                    {"knn": {"embedding": {"vector": query_embedding, "k": candidate_size}}},
+                ],
+            }
+        }
 
         search_body = {
             "size": size,

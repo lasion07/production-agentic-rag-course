@@ -183,6 +183,9 @@ class FakeModel:
 
 
 class FakeOllama:
+    def validate_model(self, model: str | None = None) -> str:
+        return model or "test-model"
+
     def get_langchain_model(self, **_kwargs: Any) -> FakeModel:
         return FakeModel()
 
@@ -197,6 +200,9 @@ class SlowModel:
 
 
 class SlowOllama:
+    def validate_model(self, model: str | None = None) -> str:
+        return model or "test-model"
+
     def get_langchain_model(self, **_kwargs: Any) -> SlowModel:
         return SlowModel()
 

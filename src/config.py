@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -102,7 +102,7 @@ class OpenSearchSettings(BaseConfigSettings):
 
     # Hybrid search settings
     rrf_pipeline_name: str = "hybrid-rrf-pipeline"
-    hybrid_search_size_multiplier: int = 2  # Get k*multiplier for better recall
+    hybrid_search_size_multiplier: int = 4  # Candidate depth before returning final K
 
 
 class LangfuseSettings(BaseConfigSettings):
@@ -206,6 +206,10 @@ class Settings(BaseConfigSettings):
     openai_timeout: float = 120.0
     openai_max_retries: int = 2
     openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh"] = "none"
+    openai_allowed_models: List[str] = Field(
+        default_factory=lambda: ["gpt-5.4-mini-2026-03-17"]
+    )
+    openai_max_output_tokens: int = Field(512, ge=1, le=128000)
 
     # Jina AI embeddings configuration
     jina_api_key: str = ""
@@ -226,6 +230,15 @@ class Settings(BaseConfigSettings):
         if self.llm_provider == "openai":
             return self.openai_model
         return self.ollama_model
+
+    @model_validator(mode="after")
+    def validate_openai_model_policy(self) -> "Settings":
+        """Fail startup when the configured hosted model bypasses policy."""
+        if self.llm_provider == "openai" and self.selected_llm_model not in self.openai_allowed_models:
+            raise ValueError(
+                f"Configured OpenAI model '{self.selected_llm_model}' is not in OPENAI_ALLOWED_MODELS"
+            )
+        return self
 
     @field_validator("postgres_database_url")
     @classmethod

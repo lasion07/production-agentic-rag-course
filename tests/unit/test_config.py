@@ -55,8 +55,19 @@ def test_settings_selects_provider_model(monkeypatch):
 def test_global_llm_model_overrides_provider_default(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("LLM_MODEL", "candidate-model")
+    monkeypatch.setenv("OPENAI_ALLOWED_MODELS", '["candidate-model"]')
 
     assert Settings().selected_llm_model == "candidate-model"
+
+
+def test_openai_configured_model_must_be_allowlisted(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.4")
+    monkeypatch.setenv("OPENAI_ALLOWED_MODELS", '["gpt-5.4-mini-2026-03-17"]')
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    with pytest.raises(ValueError, match="OPENAI_ALLOWED_MODELS"):
+        Settings()
 
 
 def test_langfuse_official_environment_variable_names(monkeypatch):

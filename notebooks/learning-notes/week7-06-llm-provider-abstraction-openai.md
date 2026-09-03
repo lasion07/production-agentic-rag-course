@@ -87,6 +87,12 @@ Sau khi học viên phê duyệt raw tracing cho corpus công khai, cấu hình 
 - Trace Cloud có thể xuất hiện trễ do batch export/indexing; không nên tuyên bố delivery gap ngay ở lần đọc đầu tiên.
 - Raw trace cải thiện debugging và evaluation, nhưng quyền phê duyệt phải dựa trên loại dữ liệu, access control và retention. Public corpus không tự động làm mọi user query an toàn để lưu.
 - E2E thứ hai cho thấy model trả lời đúng cơ chế repair nhưng bỏ sót con số khi query hỏi “success range”; đây là regression case cho claim/citation evaluation, không phải lỗi provider connectivity.
+- Model snapshot allowlist chặn request override ngoài chính sách trước khi gọi provider; output-token cap chặn call vượt ngân sách thay vì âm thầm clamp.
+- Agent graph được construct một lần lúc startup. Health/readiness phản ánh đúng graph có dùng được hay không; request không tự construct lại một service lỗi.
+- Quantitative-answer dataset được tách khỏi sáu fault cases vì nó đo answer grounding trên live corpus/model, còn fault dataset đo route và retry contracts một cách deterministic.
+- RRF `pagination_depth` phải lớn hơn final K; nếu không mỗi subquery bị cắt theo `size` trước fusion. Cấu hình `hybrid_search_size_multiplier` hiện thực sự điều khiển cả fusion depth và vector candidate K.
+- Hai quantitative E2E runs vẫn đỏ: đúng source nhưng claim `56.4–68.2%` không vào final context. Đây là retrieval/context-selection failure; prompt đã hành xử đúng khi không đoán số.
+- Docker Desktop dừng hai lần quanh E2E/restart, củng cố ưu tiên tách dependency ingestion nặng khỏi serving image thay vì tiếp tục tăng tải trên máy học viên.
 
 ## Câu hỏi ôn tập
 
@@ -118,4 +124,4 @@ Sau khi học viên phê duyệt raw tracing cho corpus công khai, cấu hình 
 - [OpenAI text generation và Responses API](https://developers.openai.com/api/docs/guides/text)
 - [Langfuse observability best practices](https://langfuse.com/docs/observability/best-practices)
 
-**Trạng thái: implementation và full E2E với public corpus đã hoàn tất; còn model allowlist, cost budget/alert và tối ưu serving image.**
+**Trạng thái: model allowlist, hard output budget và agent readiness đã triển khai; quantitative regression đang đỏ có chủ đích; còn cost alert, reranking/context selection và tối ưu serving image.**

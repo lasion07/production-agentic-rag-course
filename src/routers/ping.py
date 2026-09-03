@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 from ..dependencies import DatabaseDep, LLMDep, OpenSearchDep, SettingsDep
@@ -9,6 +9,7 @@ router = APIRouter()
 
 @router.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check(
+    request: Request,
     settings: SettingsDep,
     database: DatabaseDep,
     opensearch_client: OpenSearchDep,
@@ -68,6 +69,19 @@ async def health_check(
             overall_status = "degraded"
     except Exception as e:
         services["llm"] = ServiceStatus(status="unhealthy", message=f"{llm_client.provider_name}: {e}")
+        overall_status = "degraded"
+
+    agentic_service = getattr(request.app.state, "agentic_rag_service", None)
+    if agentic_service is not None and getattr(agentic_service, "graph", None) is not None:
+        services["agentic_rag"] = ServiceStatus(
+            status="healthy",
+            message="Service constructed and graph compiled",
+        )
+    else:
+        services["agentic_rag"] = ServiceStatus(
+            status="unhealthy",
+            message=getattr(request.app.state, "agentic_rag_error", "Service not constructed"),
+        )
         overall_status = "degraded"
 
     return HealthResponse(
