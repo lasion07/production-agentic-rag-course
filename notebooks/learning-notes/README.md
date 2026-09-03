@@ -17,8 +17,9 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 - **Đã hoàn thành trong Week 7:** Bài 7.1 — Từ fixed pipeline đến bounded agent loop; Bài 7.2 — Agent state, nodes, conditional edges và routing; Bài 7.3 — Tool execution, retries và agent failure handling; Bài 7.4 — Agentic RAG practical, fault injection và evaluation
 - **Bằng chứng Week 7.4:** 6-case regression dataset đã upload Langfuse; local fault injection đạt pass=3, fail=9, blocked=6 và tái hiện đúng error masking/fallback gaps
 - **Bằng chứng Week 7.6:** OpenAI full E2E HTTP 200/10,31s; Langfuse có 22 observations, 4.941 tokens, ~$0,00537; raw public-paper content capture đã được phê duyệt và kiểm chứng ở trace riêng
-- **Technical-debt verification:** 6 fault cases đạt 18/18; quantitative answer case đang đỏ vì claim chunk chưa ổn định vào final context
-- **Bài tiếp theo:** Candidate reranking/context selection, citation allowlist/claim validation và cost alert
+- **Technical-debt verification:** 6 fault cases đạt 18/18; quantitative answer case đã chuyển xanh sau candidate reranking/context selection
+- **Bằng chứng Week 7.7:** 12 candidates → 3 final chunks; quantitative claim `56.4–68.2%` có đúng source; full suite 168 pass
+- **Bài tiếp theo:** Citation allowlist/claim validation, mở rộng labeled answer dataset và cost alert
 - **Technical debt:** Các lỗi source được hoãn có chủ đích đến sau khóa học và theo dõi trong backlog riêng
 - **Cần ôn lại:** ingestion ordering, serving dependencies và BM25 fallback
 
@@ -85,6 +86,7 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 5. [Tổng kết Week 7 — Production Agentic RAG](week7-summary.md)
 6. [Week 7.5 — Evaluation-driven hardening với sáu regression cases](week7-05-evaluation-driven-hardening.md)
 7. [Week 7.6 — LLM provider abstraction và OpenAI adapter](week7-06-llm-provider-abstraction-openai.md)
+8. [Week 7.7 — Candidate reranking và context selection](week7-07-candidate-reranking-context-selection.md)
 
 ## Cách sử dụng ghi chú
 

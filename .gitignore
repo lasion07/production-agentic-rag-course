@@ -177,6 +177,7 @@ data/
 # Test files and output
 test_output/
 test_data/
+node_modules
 
 
 

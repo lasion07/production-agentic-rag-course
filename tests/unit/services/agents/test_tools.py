@@ -41,7 +41,7 @@ async def test_create_retriever_tool_basic(mock_opensearch_client, mock_jina_emb
     mock_opensearch_client.search_unified.assert_called_once()
     call_args = mock_opensearch_client.search_unified.call_args
     assert call_args.kwargs["query"] == "machine learning"
-    assert call_args.kwargs["size"] == 2  # search_unified uses 'size', not 'top_k'
+    assert call_args.kwargs["size"] == 8  # candidate K; final K remains 2
     assert call_args.kwargs["use_hybrid"] is True
 
 
@@ -76,7 +76,7 @@ async def test_retriever_tool_custom_top_k(mock_opensearch_client, mock_jina_emb
 
     call_args = mock_opensearch_client.search_unified.call_args
     # search_unified uses 'size' parameter, not 'top_k'
-    assert call_args.kwargs["size"] == 5
+    assert call_args.kwargs["size"] == 20
     assert call_args.kwargs["use_hybrid"] is False
 
 

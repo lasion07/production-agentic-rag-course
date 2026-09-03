@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.opensearch.client import OpenSearchClient
 
+from .context_selection import select_context_documents
 from .models import RetrievalOutcome
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,7 @@ async def execute_retrieval(
     search_attempt_timeout_seconds: float = 5.0,
     deadline_monotonic: Optional[float] = None,
     generation_reserve_seconds: float = 5.0,
+    candidate_multiplier: int = 4,
 ) -> RetrievalOutcome:
     """Execute bounded retrieval without masking dependency failures.
 
@@ -101,6 +103,7 @@ async def execute_retrieval(
     """
 
     requested_mode = "hybrid" if use_hybrid else "bm25"
+    candidate_k = max(top_k, top_k * candidate_multiplier)
     actual_mode = requested_mode
     embedding: Optional[list[float]] = None
     embedding_attempts = 0
@@ -160,7 +163,7 @@ async def execute_retrieval(
                     opensearch_client.search_unified,
                     query=query,
                     query_embedding=embedding,
-                    size=top_k,
+                    size=candidate_k,
                     categories=categories,
                     use_hybrid=actual_mode == "hybrid",
                 ),
@@ -170,7 +173,13 @@ async def execute_retrieval(
                     generation_reserve_seconds,
                 ),
             )
-            documents = _documents_from_hits(search_results.get("hits", []), actual_mode, top_k)
+            candidates = _documents_from_hits(search_results.get("hits", []), actual_mode, top_k)
+            documents = select_context_documents(query, candidates, final_k=top_k)
+            logger.info(
+                "Selected %s final context chunks from %s candidates",
+                len(documents),
+                len(candidates),
+            )
             return RetrievalOutcome(
                 status="degraded" if fallbacks else "success",
                 documents=documents,

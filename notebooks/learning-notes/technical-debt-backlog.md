@@ -148,7 +148,7 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Hiện tượng: câu trả lời mô tả đúng phương pháp nhưng bỏ sót range số liệu dù user hỏi trực tiếp.
 - Hướng sửa: prompt rule tổng quát cho số liệu/đơn vị, candidate retrieval sâu hơn, rerank/context selection và một live answer-contract regression case.
 - Bằng chứng: hai live runs đều lấy đúng paper nhưng thiếu `56.4–68.2`; Langfuse trace `230f22f8df72e3ec0d0f2c79ef5bb73a` xác nhận hai số không có trong generation input, nên model đã từ chối bịa đúng contract.
-- Trạng thái: **Open, regression đỏ** — prompt đã sửa và RRF có `pagination_depth`, nhưng cần reranker/context selector để quantitative chunk ổn định vào final K.
+- Trạng thái: **Resolved for v0** — lấy 12 candidates, query-aware rerank và diversity selection xuống 3 chunks; live regression pass với đúng claim/source. Cần mở rộng labeled dataset để hiệu chỉnh trọng số trước production cutover.
 
 ### TD-W7-19 — API image vẫn nặng dù đã bỏ local inference — P3
 
@@ -163,4 +163,4 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Đã giảm rủi ro nhưng còn việc: TD-W7-03, 09, 11.
 - Chưa triển khai: TD-W7-01.
 - Đang thực hiện: TD-W7-18.
-- Regression đỏ cần xử lý tiếp: TD-W7-20.
+- Cần mở rộng evaluation coverage: TD-W7-20.

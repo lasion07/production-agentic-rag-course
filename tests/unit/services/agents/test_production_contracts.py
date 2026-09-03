@@ -236,7 +236,7 @@ async def test_full_graph_reports_actual_execution_contract() -> None:
     assert result["actual_search_mode"] == "bm25"
     assert result["chunks_used"] == 1
     assert result["sources"] == ["https://arxiv.org/pdf/1706.03762.pdf"]
-    assert search.calls[0]["size"] == 5
+    assert search.calls[0]["size"] == 20
     assert search.calls[0]["categories"] == ["cs.AI"]
 
 
