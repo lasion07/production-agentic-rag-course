@@ -26,6 +26,10 @@ async def client():
 
     langfuse = MagicMock()
     telegram = None
+    llm = MagicMock(provider_name="test", default_model="test-model")
+    llm.health_check = AsyncMock(
+        return_value={"status": "healthy", "message": "Test LLM is reachable"}
+    )
 
     with (
         patch("src.main.make_database", return_value=database),
@@ -33,7 +37,7 @@ async def client():
         patch("src.main.make_arxiv_client", return_value=AsyncMock()),
         patch("src.main.make_pdf_parser_service", return_value=AsyncMock()),
         patch("src.main.make_embeddings_service", return_value=AsyncMock()),
-        patch("src.main.make_ollama_client", return_value=AsyncMock()),
+        patch("src.main.make_llm_client", return_value=llm),
         patch("src.main.make_langfuse_tracer", return_value=langfuse),
         patch("src.main.make_cache_client", return_value=MagicMock()),
         patch("src.main.make_telegram_service", return_value=telegram),

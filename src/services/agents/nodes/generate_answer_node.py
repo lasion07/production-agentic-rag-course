@@ -68,8 +68,10 @@ async def ainvoke_generate_answer_step(
                     "model": runtime.context.model_name,
                     "temperature": runtime.context.temperature,
                 },
-                as_type="generation",
-                model=runtime.context.model_name,
+                # The LangChain callback records the actual model invocation as
+                # a GENERATION (with authoritative token/cost usage). Keep this
+                # wrapper as a CHAIN so Langfuse does not double-count it.
+                as_type="chain",
             )
             logger.debug("Created Langfuse span for answer generation")
         except Exception as e:
@@ -83,10 +85,10 @@ async def ainvoke_generate_answer_step(
         )
 
         # Get LLM from runtime context
-        llm = runtime.context.ollama_client.get_langchain_model(
+        llm = runtime.context.llm_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=runtime.context.temperature,
-            num_predict=128,
+            num_predict=512,
         )
 
         # Invoke LLM for answer generation
@@ -104,7 +106,16 @@ async def ainvoke_generate_answer_step(
             )
 
         # Extract content from response
-        answer = response.content if hasattr(response, "content") else str(response)
+        content = response.content if hasattr(response, "content") else response
+        if isinstance(content, list):
+            # Responses API messages use typed content blocks while the API
+            # contract exposes one answer string.
+            answer = "".join(
+                block.get("text", "") if isinstance(block, dict) else getattr(block, "text", str(block))
+                for block in content
+            )
+        else:
+            answer = str(content)
         logger.info(f"Generated answer of length: {len(answer)} characters")
 
         # Update span with successful result

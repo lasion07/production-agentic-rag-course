@@ -67,10 +67,10 @@ async def ainvoke_rewrite_query_step(
     # Use LLM to rewrite the query intelligently
     try:
         # Create structured LLM for query rewriting
-        llm = runtime.context.ollama_client.get_langchain_model(
+        llm = runtime.context.llm_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=0.3,  # Lower temperature for more focused rewriting
-            num_predict=64,
+            num_predict=128,
         )
         structured_llm = llm.with_structured_output(QueryRewriteOutput)
 

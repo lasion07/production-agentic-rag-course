@@ -97,13 +97,14 @@ class RAGTracer:
         )
 
     @contextmanager
-    def trace_generation(self, trace: Any, model: str, prompt: str):
+    def trace_generation(self, trace: Any, model: str, prompt: str, provider: str = "unknown"):
         with self.tracer.start_span(
             name="llm-generation",
             as_type="generation",
             model=model,
-            model_parameters={"num_predict": 128, "temperature": 0.7, "top_p": 0.9},
+            model_parameters={"max_output_tokens": 128},
             input_data={"prompt": self.tracer.safe_content(prompt), "prompt_chars": len(prompt)},
+            metadata={"provider": provider},
         ) as span:
             yield span
 

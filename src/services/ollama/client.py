@@ -6,8 +6,8 @@ import httpx
 from langchain_ollama import ChatOllama
 from src.config import Settings
 from src.exceptions import OllamaConnectionError, OllamaException, OllamaTimeoutError
-from src.schemas.ollama import RAGResponse
-from src.services.ollama.prompts import RAGPromptBuilder, ResponseParser
+from src.schemas.llm import RAGResponse
+from src.services.llm.prompts import RAGPromptBuilder, ResponseParser
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +15,13 @@ logger = logging.getLogger(__name__)
 class OllamaClient:
     """Client for interacting with Ollama local LLM service."""
 
+    provider_name = "ollama"
+
     def __init__(self, settings: Settings):
         """Initialize Ollama client with settings."""
         self.base_url = settings.ollama_host
         self.timeout = httpx.Timeout(float(settings.ollama_timeout))
+        self.default_model = getattr(settings, "ollama_model", "llama3.2:1b")
         self.prompt_builder = RAGPromptBuilder()
         self.response_parser = ResponseParser()
 

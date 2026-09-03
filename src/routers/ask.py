@@ -6,7 +6,7 @@ from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from src.dependencies import CacheDep, EmbeddingsDep, LangfuseDep, OllamaDep, OpenSearchDep
+from src.dependencies import CacheDep, EmbeddingsDep, LangfuseDep, LLMDep, OpenSearchDep
 from src.schemas.api.ask import AskRequest, AskResponse
 from src.services.langfuse.tracer import RAGTracer
 
@@ -17,8 +17,10 @@ ask_router = APIRouter(tags=["ask"])
 stream_router = APIRouter(tags=["stream"])
 
 
-def _usage_from_ollama_chunk(chunk: Dict) -> Dict:
-    """Normalize final Ollama stream counters for Langfuse."""
+def _usage_from_llm_chunk(chunk: Dict) -> Dict:
+    """Normalize provider stream counters for Langfuse."""
+    if chunk.get("usage_metadata"):
+        return chunk["usage_metadata"]
     prompt_tokens = int(chunk.get("prompt_eval_count", 0))
     completion_tokens = int(chunk.get("eval_count", 0))
     usage = {
@@ -96,7 +98,7 @@ async def ask_question(
     request: AskRequest,
     opensearch_client: OpenSearchDep,
     embeddings_service: EmbeddingsDep,
-    ollama_client: OllamaDep,
+    llm_client: LLMDep,
     langfuse_tracer: LangfuseDep,
     cache_client: CacheDep,
 ) -> AskResponse:
@@ -104,6 +106,8 @@ async def ask_question(
 
     rag_tracer = RAGTracer(langfuse_tracer)
     start_time = time.time()
+    model_name = request.model or llm_client.default_model
+    effective_request = request.model_copy(update={"model": model_name})
 
     with rag_tracer.trace_request("api_user", request.query) as trace:
         try:
@@ -111,7 +115,7 @@ async def ask_question(
             cached_response = None
             if cache_client:
                 with rag_tracer.trace_cache("lookup") as cache_span:
-                    cached_response, cache_result = await cache_client.lookup_response(request)
+                    cached_response, cache_result = await cache_client.lookup_response(effective_request)
                     rag_tracer.end_cache(cache_span, cache_result)
                     if cached_response:
                         logger.info("Returning cached response for exact query match")
@@ -123,7 +127,7 @@ async def ask_question(
 
             # Retrieve chunks
             chunks, sources, _ = await _prepare_chunks_and_sources(
-                request, opensearch_client, embeddings_service, rag_tracer, trace
+                effective_request, opensearch_client, embeddings_service, rag_tracer, trace
             )
 
             if not chunks:
@@ -139,7 +143,7 @@ async def ask_question(
 
             # Build prompt
             with rag_tracer.trace_prompt_construction(trace, chunks) as prompt_span:
-                from src.services.ollama.prompts import RAGPromptBuilder
+                from src.services.llm.prompts import RAGPromptBuilder
 
                 prompt_builder = RAGPromptBuilder()
 
@@ -152,13 +156,15 @@ async def ask_question(
                 rag_tracer.end_prompt(prompt_span, final_prompt)
 
             # Generate answer
-            with rag_tracer.trace_generation(trace, request.model, final_prompt) as gen_span:
-                rag_response = await ollama_client.generate_rag_answer(query=request.query, chunks=chunks, model=request.model)
+            with rag_tracer.trace_generation(
+                trace, model_name, final_prompt, provider=llm_client.provider_name
+            ) as gen_span:
+                rag_response = await llm_client.generate_rag_answer(query=request.query, chunks=chunks, model=model_name)
                 answer = rag_response.get("answer", "Unable to generate answer")
                 rag_tracer.end_generation(
                     gen_span,
                     answer,
-                    request.model,
+                    model_name,
                     usage_metadata=rag_response.get("usage_metadata"),
                     finish_reason=rag_response.get("finish_reason"),
                 )
@@ -177,7 +183,7 @@ async def ask_question(
             # Store response in exact match cache
             if cache_client:
                 with rag_tracer.trace_cache("store") as cache_span:
-                    stored = await cache_client.store_response(request, response)
+                    stored = await cache_client.store_response(effective_request, response)
                     rag_tracer.end_cache(cache_span, "stored" if stored else "error")
 
             return response
@@ -193,7 +199,7 @@ async def ask_question_stream(
     request: AskRequest,
     opensearch_client: OpenSearchDep,
     embeddings_service: EmbeddingsDep,
-    ollama_client: OllamaDep,
+    llm_client: LLMDep,
     langfuse_tracer: LangfuseDep,
     cache_client: CacheDep,
 ) -> StreamingResponse:
@@ -202,13 +208,15 @@ async def ask_question_stream(
     async def generate_stream():
         rag_tracer = RAGTracer(langfuse_tracer)
         start_time = time.time()
+        model_name = request.model or llm_client.default_model
+        effective_request = request.model_copy(update={"model": model_name})
 
         with rag_tracer.trace_request("api_user", request.query) as trace:
             try:
                 # Check exact cache first
                 if cache_client:
                     with rag_tracer.trace_cache("lookup") as cache_span:
-                        cached_response, cache_result = await cache_client.lookup_response(request)
+                        cached_response, cache_result = await cache_client.lookup_response(effective_request)
                         rag_tracer.end_cache(cache_span, cache_result)
                         if cached_response:
                             logger.info("Returning cached response for exact streaming query match")
@@ -232,7 +240,7 @@ async def ask_question_stream(
 
                 # Retrieve chunks
                 chunks, sources, _ = await _prepare_chunks_and_sources(
-                    request, opensearch_client, embeddings_service, rag_tracer, trace
+                    effective_request, opensearch_client, embeddings_service, rag_tracer, trace
                 )
 
                 if not chunks:
@@ -248,19 +256,21 @@ async def ask_question_stream(
 
                 # Build prompt
                 with rag_tracer.trace_prompt_construction(trace, chunks) as prompt_span:
-                    from src.services.ollama.prompts import RAGPromptBuilder
+                    from src.services.llm.prompts import RAGPromptBuilder
 
                     prompt_builder = RAGPromptBuilder()
                     final_prompt = prompt_builder.create_rag_prompt(request.query, chunks)
                     rag_tracer.end_prompt(prompt_span, final_prompt)
 
                 # Stream generation
-                with rag_tracer.trace_generation(trace, request.model, final_prompt) as gen_span:
+                with rag_tracer.trace_generation(
+                    trace, model_name, final_prompt, provider=llm_client.provider_name
+                ) as gen_span:
                     full_response = ""
                     completion_start_time = None
                     final_chunk = {}
-                    async for chunk in ollama_client.generate_rag_answer_stream(
-                        query=request.query, chunks=chunks, model=request.model
+                    async for chunk in llm_client.generate_rag_answer_stream(
+                        query=request.query, chunks=chunks, model=model_name
                     ):
                         if chunk.get("response"):
                             if completion_start_time is None:
@@ -274,8 +284,8 @@ async def ask_question_stream(
                             rag_tracer.end_generation(
                                 gen_span,
                                 full_response,
-                                request.model,
-                                usage_metadata=_usage_from_ollama_chunk(final_chunk),
+                                model_name,
+                                usage_metadata=_usage_from_llm_chunk(final_chunk),
                                 completion_start_time=completion_start_time,
                                 finish_reason=final_chunk.get("done_reason"),
                             )
@@ -295,7 +305,7 @@ async def ask_question_stream(
                             chunks_used=len(chunks),
                             search_mode=search_mode,
                         )
-                        stored = await cache_client.store_response(request, response_to_cache)
+                        stored = await cache_client.store_response(effective_request, response_to_cache)
                         rag_tracer.end_cache(cache_span, "stored" if stored else "error")
 
             except Exception as e:

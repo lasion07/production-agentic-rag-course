@@ -133,6 +133,21 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Hướng sửa: adapter `ChatOllama` dùng chung host/timeout với client và contract test.
 - Trạng thái: **Resolved**.
 
+### TD-W7-18 — Hosted LLM production controls chưa đầy đủ — P2
+
+- Source: LLM provider factory, OpenAI adapter và deployment configuration.
+- Đã có: provider-neutral contract, Responses API, streaming, structured output, token usage, provider-aware health và model-aware cache identity.
+- Đã kiểm chứng: full E2E trên ba public arXiv papers và Langfuse trace audit; privacy masking, trace ID, business metadata và generation cost không bị đếm đôi.
+- Còn lại: model allowlist và cost budget/alert.
+- Trạng thái: **In progress**.
+
+### TD-W7-19 — API image vẫn nặng dù đã bỏ local inference — P3
+
+- Source: API image chứa Docling/PyTorch cho parsing.
+- Ảnh hưởng: build/export chậm và footprint lớn; không làm API tiêu tốn RAM cho Ollama inference.
+- Hướng sửa: tách ingestion/parser worker khỏi serving image.
+- Trạng thái: **Backlog**.
+
 ## Trạng thái
 
 - Đã giải quyết: TD-W7-02, 04, 05, 06, 07, 08, 10, 12, 13, 14, 15, 17.

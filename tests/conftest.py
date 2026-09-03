@@ -71,7 +71,7 @@ def mock_jina_embeddings_client():
 
 
 @pytest.fixture
-def mock_ollama_client():
+def mock_llm_client():
     client = Mock()
     client.get_langchain_model = Mock(return_value=_FakeLLM())
     client.create_llm = Mock(return_value=_FakeLLM())
@@ -79,9 +79,9 @@ def mock_ollama_client():
 
 
 @pytest.fixture
-def test_context(mock_opensearch_client, mock_ollama_client, mock_jina_embeddings_client):
+def test_context(mock_opensearch_client, mock_llm_client, mock_jina_embeddings_client):
     return Context(
-        ollama_client=mock_ollama_client,
+        llm_client=mock_llm_client,
         opensearch_client=mock_opensearch_client,
         embeddings_client=mock_jina_embeddings_client,
         langfuse_tracer=None,

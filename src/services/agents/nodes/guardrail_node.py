@@ -82,10 +82,12 @@ async def ainvoke_guardrail_step(
         guardrail_prompt = GUARDRAIL_PROMPT.format(question=query)
 
         # Get LLM from runtime context
-        llm = runtime.context.ollama_client.get_langchain_model(
+        llm = runtime.context.llm_client.get_langchain_model(
             model=runtime.context.model_name,
             temperature=0.0,
-            num_predict=32,
+            # Structured output includes both score and explanation. A 32-token
+            # cap truncated valid JSON from hosted models during the E2E smoke.
+            num_predict=128,
         )
 
         # Create structured output LLM for guardrail scoring

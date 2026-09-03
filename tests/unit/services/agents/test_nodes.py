@@ -1,20 +1,21 @@
 """Tests for agentic RAG node functions using Runtime[Context] pattern."""
 
-import pytest
 from unittest.mock import AsyncMock, Mock
+
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
-
+from src.services.agents.models import GradeDocuments, GuardrailScoring
 from src.services.agents.nodes import (
-    ainvoke_retrieve_step,
-    ainvoke_grade_documents_step,
-    ainvoke_rewrite_query_step,
     ainvoke_generate_answer_step,
+    ainvoke_grade_documents_step,
+    ainvoke_guardrail_step,
     ainvoke_out_of_scope_step,
+    ainvoke_retrieve_step,
+    ainvoke_rewrite_query_step,
     continue_after_guardrail,
 )
-from src.services.agents.nodes.utils import get_latest_query, get_latest_context
-from src.services.agents.models import GuardrailScoring, GradeDocuments
+from src.services.agents.nodes.utils import get_latest_context, get_latest_query
 from src.services.agents.state import AgentState
 
 
@@ -48,6 +49,35 @@ class TestGuardrailNode:
         result = continue_after_guardrail(state, runtime)
 
         assert result == "out_of_scope"
+
+    @pytest.mark.asyncio
+    async def test_guardrail_reserves_enough_tokens_for_structured_output(
+        self,
+        test_context,
+        sample_human_message,
+    ):
+        """Protect against hosted providers truncating the JSON decision."""
+        structured_llm = Mock()
+        structured_llm.ainvoke = AsyncMock(
+            return_value=GuardrailScoring(score=92, reason="Clearly in scope")
+        )
+        llm = Mock()
+        llm.with_structured_output.return_value = structured_llm
+        test_context.llm_client.get_langchain_model = Mock(return_value=llm)
+        runtime = Mock(spec=Runtime)
+        runtime.context = test_context
+
+        result = await ainvoke_guardrail_step(
+            {"messages": [sample_human_message], "retrieval_attempts": 0},
+            runtime,
+        )
+
+        assert result["guardrail_result"].score == 92
+        test_context.llm_client.get_langchain_model.assert_called_once_with(
+            model="test-model",
+            temperature=0.0,
+            num_predict=128,
+        )
 
 
 class TestRetrieveNode:
@@ -102,7 +132,7 @@ class TestGradeDocumentsNode:
             binary_score="yes",
             reasoning="Document discusses transformers which is relevant"
         ))
-        test_context.ollama_client.create_llm = Mock(return_value=mock_llm)
+        test_context.llm_client.get_langchain_model = Mock(return_value=mock_llm)
 
         state: AgentState = {
             "messages": [sample_human_message, sample_tool_message],
@@ -123,7 +153,7 @@ class TestGradeDocumentsNode:
             binary_score="no",
             reasoning="Document is not relevant to the query"
         ))
-        test_context.ollama_client.create_llm = Mock(return_value=mock_llm)
+        test_context.llm_client.get_langchain_model = Mock(return_value=mock_llm)
 
         state: AgentState = {
             "messages": [sample_human_message, sample_tool_message],
@@ -147,7 +177,7 @@ class TestRewriteQueryNode:
         mock_llm.ainvoke = AsyncMock(return_value=Mock(
             content="What are the key concepts in transformer neural network architectures?"
         ))
-        test_context.ollama_client.create_llm = Mock(return_value=mock_llm)
+        test_context.llm_client.get_langchain_model = Mock(return_value=mock_llm)
 
         state: AgentState = {
             "messages": [sample_human_message],
@@ -174,7 +204,7 @@ class TestGenerateAnswerNode:
         mock_llm.ainvoke = AsyncMock(return_value=Mock(
             content="Based on the papers, transformers are neural network architectures."
         ))
-        test_context.ollama_client.create_llm = Mock(return_value=mock_llm)
+        test_context.llm_client.get_langchain_model = Mock(return_value=mock_llm)
 
         state: AgentState = {
             "messages": [sample_human_message, sample_tool_message],
@@ -188,6 +218,36 @@ class TestGenerateAnswerNode:
         assert "messages" in result
         assert isinstance(result["messages"][0], AIMessage)
         assert len(result["messages"][0].content) > 0
+        test_context.llm_client.get_langchain_model.assert_called_once_with(
+            model="test-model",
+            temperature=test_context.temperature,
+            num_predict=512,
+        )
+
+    @pytest.mark.asyncio
+    async def test_generate_answer_normalizes_responses_content_blocks(
+        self,
+        test_context,
+        sample_human_message,
+        sample_tool_message,
+    ):
+        mock_llm = Mock()
+        mock_llm.ainvoke = AsyncMock(
+            return_value=Mock(content=[{"type": "text", "text": "grounded answer"}])
+        )
+        test_context.llm_client.get_langchain_model = Mock(return_value=mock_llm)
+        runtime = Mock(spec=Runtime)
+        runtime.context = test_context
+
+        result = await ainvoke_generate_answer_step(
+            {
+                "messages": [sample_human_message, sample_tool_message],
+                "retrieval_attempts": 1,
+            },
+            runtime,
+        )
+
+        assert result["messages"][0].content == "grounded answer"
 
 
 class TestOutOfScopeNode:
@@ -200,7 +260,7 @@ class TestOutOfScopeNode:
         mock_llm.ainvoke = AsyncMock(return_value=Mock(
             content="I'm designed to help with AI research papers."
         ))
-        test_context.ollama_client.create_llm = Mock(return_value=mock_llm)
+        test_context.llm_client.get_langchain_model = Mock(return_value=mock_llm)
 
         state: AgentState = {
             "messages": [sample_human_message],

@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -196,6 +196,17 @@ class Settings(BaseConfigSettings):
     ollama_model: str = "llama3.2:1b"
     ollama_timeout: int = 300
 
+    # Provider-neutral LLM configuration. Ollama remains the default so an
+    # existing deployment keeps working until LLM_PROVIDER is changed.
+    llm_provider: Literal["ollama", "openai"] = "ollama"
+    llm_model: Optional[str] = None
+    openai_api_key: SecretStr = SecretStr("")
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-5.4-mini-2026-03-17"
+    openai_timeout: float = 120.0
+    openai_max_retries: int = 2
+    openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh"] = "none"
+
     # Jina AI embeddings configuration
     jina_api_key: str = ""
 
@@ -206,6 +217,15 @@ class Settings(BaseConfigSettings):
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
+
+    @property
+    def selected_llm_model(self) -> str:
+        """Return the configured model for the active provider."""
+        if self.llm_model:
+            return self.llm_model
+        if self.llm_provider == "openai":
+            return self.openai_model
+        return self.ollama_model
 
     @field_validator("postgres_database_url")
     @classmethod

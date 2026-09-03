@@ -41,6 +41,24 @@ def test_settings_ollama_defaults():
     assert settings.ollama_host in ["http://localhost:11434", "http://ollama:11434"]
 
 
+def test_settings_selects_provider_model(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.4-mini-2026-03-17")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    settings = Settings()
+
+    assert settings.selected_llm_model == "gpt-5.4-mini-2026-03-17"
+    assert settings.openai_api_key.get_secret_value() != str(settings.openai_api_key)
+
+
+def test_global_llm_model_overrides_provider_default(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "candidate-model")
+
+    assert Settings().selected_llm_model == "candidate-model"
+
+
 def test_langfuse_official_environment_variable_names(monkeypatch):
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")

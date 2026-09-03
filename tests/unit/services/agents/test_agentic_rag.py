@@ -1,16 +1,16 @@
 """Tests for AgenticRAGService using LangGraph 2.0 Runtime pattern."""
 
-import pytest
 from unittest.mock import AsyncMock, Mock
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
+import pytest
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from src.services.agents.agentic_rag import AgenticRAGService
 from src.services.agents.config import GraphConfig
-from src.services.agents.models import GuardrailScoring
+from src.services.agents.models import GuardrailScoring, SourceItem
 
 
 @pytest.fixture
-def test_service(mock_opensearch_client, mock_ollama_client, mock_jina_embeddings_client):
+def test_service(mock_opensearch_client, mock_llm_client, mock_jina_embeddings_client):
     """Create AgenticRAGService with mocked dependencies."""
     config = GraphConfig(
         model="llama3.2:1b",
@@ -22,7 +22,7 @@ def test_service(mock_opensearch_client, mock_ollama_client, mock_jina_embedding
     )
     return AgenticRAGService(
         opensearch_client=mock_opensearch_client,
-        ollama_client=mock_ollama_client,
+        llm_client=mock_llm_client,
         embeddings_client=mock_jina_embeddings_client,
         langfuse_tracer=None,
         graph_config=config,
@@ -35,7 +35,7 @@ class TestAgenticRAGServiceInitialization:
     def test_service_initialization(self, test_service):
         """Test that service initializes correctly."""
         assert test_service.opensearch is not None
-        assert test_service.ollama is not None
+        assert test_service.llm is not None
         assert test_service.embeddings is not None
         assert test_service.graph is not None
         assert test_service.graph_config is not None
@@ -88,6 +88,35 @@ class TestAgenticRAGAskMethod:
         assert result is not None
         # Verify graph was called
         test_service.graph.ainvoke.assert_called_once()
+
+    def test_extract_answer_normalizes_responses_content_blocks(self, test_service):
+        result = {
+            "messages": [
+                AIMessage(content=[{"type": "text", "text": "grounded answer"}]),
+            ]
+        }
+
+        assert test_service._extract_answer(result) == "grounded answer"
+
+    def test_extract_sources_deduplicates_chunks_from_same_paper(self, test_service):
+        source = SourceItem(
+            arxiv_id="2508.11110v1",
+            title="Diffusion is a code repair operator and generator",
+            authors=["Mukul Singh"],
+            url="https://arxiv.org/pdf/2508.11110v1.pdf",
+            relevance_score=1.0,
+        )
+
+        assert test_service._extract_sources({"relevant_sources": [source, source]}) == [source.url]
+
+    def test_trace_id_uses_trace_identifier_instead_of_span_id(self, test_service):
+        tracer = Mock()
+        tracer.get_trace_id.return_value = "4f2f2add7fd0de164fffd5267bcc4a79"
+        test_service.langfuse_tracer = tracer
+        root_span = Mock(id="37a87b89ce517f4f")
+
+        assert test_service._trace_id(root_span) == "4f2f2add7fd0de164fffd5267bcc4a79"
+        tracer.get_trace_id.assert_called_once_with(root_span)
 
 
 class TestAgenticRAGGraphVisualization:

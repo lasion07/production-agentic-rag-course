@@ -1,12 +1,14 @@
 """Fail-open Langfuse v4 wrapper used by the API and agentic workflow."""
 
 import hashlib
+import json
 import logging
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, Iterator, Literal, Optional
 
 from langfuse import Langfuse, propagate_attributes
+from langfuse.types import MaskOtelSpansParams, MaskOtelSpansResult, OtelSpanPatch
 from src.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -14,6 +16,32 @@ logger = logging.getLogger(__name__)
 ObservationType = Literal[
     "span", "agent", "tool", "chain", "retriever", "evaluator", "guardrail", "generation", "embedding"
 ]
+
+
+def _mask_trace_content(*, params: MaskOtelSpansParams) -> Optional[MaskOtelSpansResult]:
+    """Redact content attributes from SDK and third-party OTEL spans."""
+    patches = {}
+    for identifier, span in params.spans.items():
+        replacements = {}
+        for key, value in span.attributes.items():
+            contains_content = (
+                key in {"langfuse.observation.input", "langfuse.observation.output"}
+                or key.startswith("gen_ai.prompt.")
+                or key.startswith("gen_ai.completion.")
+            )
+            if contains_content:
+                text = value if isinstance(value, str) else repr(value)
+                replacements[key] = json.dumps(
+                    {
+                        "redacted": True,
+                        "chars": len(text),
+                        "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16],
+                    },
+                    separators=(",", ":"),
+                )
+        if replacements:
+            patches[identifier] = OtelSpanPatch(set_attributes=replacements)
+    return MaskOtelSpansResult(span_patches=patches) if patches else None
 
 
 class LangfuseTracer:
@@ -45,6 +73,7 @@ class LangfuseTracer:
                 environment=settings.environment,
                 release=settings.app_version,
                 sample_rate=self.settings.sample_rate,
+                mask_otel_spans=None if self.settings.capture_content else _mask_trace_content,
             )
             logger.info("Langfuse v4 tracing initialized (base_url: %s)", self.settings.base_url)
         except Exception as exc:

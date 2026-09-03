@@ -117,7 +117,7 @@ class TimeoutOpenSearch:
 def runtime_for_grades(grades: list[str], max_retrieval_attempts: int = 2) -> SimpleNamespace:
     return SimpleNamespace(
         context=SimpleNamespace(
-            ollama_client=FakeOllama(grades),
+            llm_client=FakeOllama(grades),
             langfuse_enabled=False,
             trace=None,
             model_name="fault-injection-model",
@@ -162,10 +162,10 @@ def dependency_construction_blocker() -> str | None:
     try:
         get_agentic_rag_service(
             opensearch=object(),
-            ollama=object(),
+            llm=object(),
             embeddings=object(),
             langfuse=None,
-            settings=SimpleNamespace(ollama_model="llama3.2:1b"),
+            settings=SimpleNamespace(selected_llm_model="test-model"),
         )
     except Exception as exc:
         return f"{type(exc).__name__}: {exc}"

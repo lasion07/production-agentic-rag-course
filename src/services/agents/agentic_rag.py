@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 from src.services.embeddings.jina_client import JinaEmbeddingsClient
 from src.services.langfuse.client import LangfuseTracer
-from src.services.ollama.client import OllamaClient
+from src.services.llm.protocol import LLMClient
 from src.services.opensearch.client import OpenSearchClient
 
 from .config import GraphConfig
@@ -45,7 +45,7 @@ class AgenticRAGService:
     def __init__(
         self,
         opensearch_client: OpenSearchClient,
-        ollama_client: OllamaClient,
+        llm_client: LLMClient,
         embeddings_client: JinaEmbeddingsClient,
         langfuse_tracer: Optional[LangfuseTracer] = None,
         graph_config: Optional[GraphConfig] = None,
@@ -53,13 +53,13 @@ class AgenticRAGService:
         """Initialize agentic RAG service.
 
         :param opensearch_client: Client for document search
-        :param ollama_client: Client for LLM generation
+        :param llm_client: Provider-neutral client for LLM generation
         :param embeddings_client: Client for embeddings
         :param langfuse_tracer: Optional Langfuse tracer
         :param graph_config: Configuration for graph execution
         """
         self.opensearch = opensearch_client
-        self.ollama = ollama_client
+        self.llm = llm_client
         self.embeddings = embeddings_client
         self.langfuse_tracer = langfuse_tracer
         self.graph_config = graph_config or GraphConfig()
@@ -207,6 +207,7 @@ class AgenticRAGService:
                     "use_hybrid": effective_use_hybrid,
                     "categories": categories,
                     "model": model_to_use,
+                    "llm_provider": self.llm.provider_name,
                 }
                 with self.langfuse_tracer.trace_attributes(
                     user_id=user_id,
@@ -276,7 +277,7 @@ class AgenticRAGService:
 
             # Runtime context (dependencies)
             runtime_context = Context(
-                ollama_client=self.ollama,
+                llm_client=self.llm,
                 opensearch_client=self.opensearch,
                 embeddings_client=self.embeddings,
                 langfuse_tracer=self.langfuse_tracer,
@@ -344,7 +345,7 @@ class AgenticRAGService:
                     "tool_attempts": 0,
                     "tool_failures": 0,
                     "fallbacks": 0,
-                    "trace_id": getattr(trace, "id", None) if trace else None,
+                    "trace_id": self._trace_id(trace),
                 }
 
             execution_time = time.time() - start_time
@@ -358,6 +359,9 @@ class AgenticRAGService:
 
             # Update trace (cleanup handled by context manager)
             if trace:
+                business_status = result.get("business_status") or "success"
+                terminal_route = result.get("terminal_route")
+                actual_search_mode = result.get("actual_search_mode", "none")
                 trace.update(
                     output={
                         "answer": self.langfuse_tracer.safe_content(answer),
@@ -365,7 +369,23 @@ class AgenticRAGService:
                         "retrieval_attempts": retrieval_attempts,
                         "reasoning_steps": reasoning_steps,
                         "execution_time": execution_time,
-                    }
+                    },
+                    # Content masking intentionally replaces the trace output
+                    # with a digest. Preserve non-sensitive operational fields
+                    # as metadata so production traces remain filterable.
+                    metadata={
+                        "business_status": business_status,
+                        "terminal_route": terminal_route,
+                        "actual_search_mode": actual_search_mode,
+                        "retrieval_attempts": retrieval_attempts,
+                        "embedding_attempts": result.get("embedding_attempts", 0),
+                        "tool_attempts": result.get("tool_attempts", 0),
+                        "tool_failures": result.get("tool_failures", 0),
+                        "fallbacks": result.get("fallbacks", 0),
+                        "chunks_used": len(result.get("relevant_documents", [])),
+                        "sources_count": len(sources),
+                        "execution_time_seconds": execution_time,
+                    },
                 )
 
             logger.info("=" * 80)
@@ -394,7 +414,7 @@ class AgenticRAGService:
                 "tool_attempts": result.get("tool_attempts", 0),
                 "tool_failures": result.get("tool_failures", 0),
                 "fallbacks": result.get("fallbacks", 0),
-                "trace_id": getattr(trace, "id", None) if trace else None,
+                "trace_id": self._trace_id(trace),
             }
 
         except Exception as e:
@@ -418,18 +438,31 @@ class AgenticRAGService:
             return "No answer generated."
 
         final_message = messages[-1]
-        return final_message.content if hasattr(final_message, "content") else str(final_message)
+        content = final_message.content if hasattr(final_message, "content") else final_message
+        if isinstance(content, list):
+            return "".join(
+                block.get("text", "") if isinstance(block, dict) else getattr(block, "text", str(block))
+                for block in content
+            )
+        return str(content)
+
+    def _trace_id(self, trace) -> Optional[str]:
+        """Return the Langfuse trace ID, not the root observation/span ID."""
+        if not (trace and self.langfuse_tracer):
+            return None
+        return self.langfuse_tracer.get_trace_id(trace)
 
     def _extract_sources(self, result: dict) -> List[str]:
         """Extract sources from graph result."""
         sources = []
+        seen_urls = set()
         relevant_sources = result.get("relevant_sources", [])
 
         for source in relevant_sources:
-            if hasattr(source, "url") and source.url:
-                sources.append(source.url)
-            elif isinstance(source, dict) and source.get("url"):
-                sources.append(source["url"])
+            url = source.url if hasattr(source, "url") else source.get("url") if isinstance(source, dict) else None
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                sources.append(url)
 
         return sources
 

@@ -206,7 +206,7 @@ async def test_full_graph_reports_actual_execution_contract() -> None:
     search = SearchDouble([{"total": 1, "hits": [HIT]}])
     service = AgenticRAGService(
         opensearch_client=search,
-        ollama_client=FakeOllama(),
+        llm_client=FakeOllama(),
         embeddings_client=UnexpectedEmbeddings(),
         graph_config=GraphConfig(
             model="model-a",
@@ -244,7 +244,7 @@ async def test_full_graph_two_zero_results_terminates_without_second_rewrite() -
     )
     service = AgenticRAGService(
         opensearch_client=search,
-        ollama_client=FakeOllama(),
+        llm_client=FakeOllama(),
         embeddings_client=UnexpectedEmbeddings(),
         graph_config=GraphConfig(max_retrieval_attempts=2),
     )
@@ -264,7 +264,7 @@ async def test_full_graph_search_failure_terminates_as_unavailable() -> None:
     search = SearchDouble([TimeoutError("one"), TimeoutError("two")])
     service = AgenticRAGService(
         opensearch_client=search,
-        ollama_client=FakeOllama(),
+        llm_client=FakeOllama(),
         embeddings_client=UnexpectedEmbeddings(),
         graph_config=GraphConfig(max_search_attempts=2),
     )
@@ -282,7 +282,7 @@ async def test_full_graph_search_failure_terminates_as_unavailable() -> None:
 async def test_outer_deadline_bounds_slow_agent_nodes() -> None:
     service = AgenticRAGService(
         opensearch_client=SearchDouble([{"total": 0, "hits": []}]),
-        ollama_client=SlowOllama(),
+        llm_client=SlowOllama(),
         embeddings_client=UnexpectedEmbeddings(),
         graph_config=GraphConfig(total_deadline_seconds=0.01),
     )
@@ -297,7 +297,7 @@ async def test_outer_deadline_bounds_slow_agent_nodes() -> None:
 async def test_generation_timeout_returns_grounded_degraded_extract() -> None:
     runtime = SimpleNamespace(
         context=SimpleNamespace(
-            ollama_client=SlowOllama(),
+            llm_client=SlowOllama(),
             model_name="slow-model",
             temperature=0.0,
             deadline_monotonic=time.monotonic() + 10.02,
