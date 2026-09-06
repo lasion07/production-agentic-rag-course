@@ -106,6 +106,17 @@ def test_duplicate_delivery_does_not_bump_source_version():
     assert existing.index_status == PaperIndexStatus.INDEXED.value
 
 
+def test_periodic_reconciliation_query_excludes_metadata_only_rows():
+    session = MagicMock()
+    session.scalars.return_value = []
+
+    PaperRepository(session).get_reconciliation_candidates()
+
+    statement = str(session.scalars.call_args.args[0])
+    assert "papers.pdf_processed IS true" in statement
+    assert "papers.raw_text IS NOT NULL" in statement
+
+
 def test_old_attempt_acknowledgement_cannot_hide_newer_source_version():
     paper = Paper(
         **paper_create(processed=True).model_dump(),

@@ -97,15 +97,15 @@ The current Compose file is appropriate for local learning only. Reusing it as a
 
 ### PR-P0-03 — Make ingestion and indexing recoverably consistent
 
-**Implementation status: Code complete, migration pending (2026-09-06).** PostgreSQL now owns a durable
+**Implementation status: Complete, including controlled migration (2026-09-07).** PostgreSQL now owns a durable
 paper/index state machine with source/index versions, attempts, lease/retry timestamps and sanitized errors.
 Ingestion commits or rolls back one paper at a time, preserves last-good parsed content and passes exact paper
 IDs to indexing. OpenSearch chunk writes use deterministic paper/version/chunk IDs, while fenced claim tokens
 prevent an older worker from acknowledging a newer source version. An hourly Airflow reconciler claims work
 with leases, retries with exponential backoff and records exhausted work as dead-letter with a critical alert
 hook. The non-atomic `is_active/update_by_query` approach is intentionally excluded; atomic visibility moves
-to versioned-index alias cutover in PR-P0-04. Applying these model/mapping changes
-to an existing environment is intentionally deferred to the controlled migration work in PR-P0-04.
+to versioned-index alias cutover in PR-P0-04. The model and mapping changes were applied and validated by
+the controlled PostgreSQL/OpenSearch migration drill in PR-P0-04.
 
 **Evidence**
 
@@ -135,11 +135,19 @@ Users can receive stale, duplicated, partially indexed, or missing evidence whil
 
 ### PR-P0-04 — Add controlled database and index migrations
 
+**Implementation status: Code and live migration validation complete (2026-09-07).** Alembic now owns
+the PostgreSQL schema and application startup performs connectivity checks only. Development and production
+Compose manifests expose explicit one-off migration jobs. OpenSearch uses versioned physical indices plus
+separate read/write aliases; prepare, validated atomic cutover, status and rollback are available through the
+migration CLI. Legacy documents can be copied into the first generation without deleting the legacy index.
+The development drill migrated PostgreSQL from legacy revision `5f2621c13b39` through `20260906_0001` to
+head `20260907_0004`, copied
+81/81 chunks into `v1`, cut over both aliases, rolled back to retained `v0`, then restored `v1` successfully.
+
 **Evidence**
 
-- PostgreSQL startup uses `Base.metadata.create_all()` at `src/db/interfaces/postgresql.py:50`; Alembic is installed but no migration environment or revisions exist.
-- API startup creates OpenSearch mapping and search pipeline at `src/main.py:47`.
-- The index mapping uses a concrete index name with no schema version or alias in `src/services/opensearch/index_config_hybrid.py:7`.
+- Prior to this PR, PostgreSQL startup used `Base.metadata.create_all()` and there was no checked-in Alembic revision.
+- Prior to this PR, OpenSearch reads and writes used the same concrete name without an atomic cutover boundary.
 
 **Risk**
 

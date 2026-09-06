@@ -105,6 +105,9 @@ class OpenSearchSettings(BaseConfigSettings):
     ca_certs: Optional[str] = None
     index_name: str = "arxiv-papers"
     chunk_index_suffix: str = "chunks"  # Creates single hybrid index: {index_name}-{suffix}
+    index_generation: str = Field("v1", pattern=r"^[a-zA-Z0-9._-]+$")
+    read_alias_suffix: str = Field("read", pattern=r"^[a-zA-Z0-9._-]+$")
+    write_alias_suffix: str = Field("write", pattern=r"^[a-zA-Z0-9._-]+$")
     max_text_size: int = 1000000
 
     # Vector search settings

@@ -4,9 +4,11 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from opensearchpy import OpenSearch
+from opensearchpy.exceptions import NotFoundError
 from src.config import Settings
 
 from .index_config_hybrid import ARXIV_PAPERS_CHUNKS_MAPPING, HYBRID_RRF_PIPELINE
+from .migrations import VersionedIndexMigrator
 from .query_builder import QueryBuilder
 
 logger = logging.getLogger(__name__)
@@ -18,7 +20,20 @@ class OpenSearchClient:
     def __init__(self, host: str, settings: Settings):
         self.host = host
         self.settings = settings
-        self.index_name = f"{settings.opensearch.index_name}-{settings.opensearch.chunk_index_suffix}"
+        self.index_base_name = (
+            f"{settings.opensearch.index_name}-{settings.opensearch.chunk_index_suffix}"
+        )
+        self.read_alias = (
+            f"{self.index_base_name}-{settings.opensearch.read_alias_suffix}"
+        )
+        self.write_alias = (
+            f"{self.index_base_name}-{settings.opensearch.write_alias_suffix}"
+        )
+        self.physical_index_name = (
+            f"{self.index_base_name}-{settings.opensearch.index_generation}"
+        )
+        # Compatibility for callers that display/check the serving index.
+        self.index_name = self.read_alias
 
         opensearch_settings = settings.opensearch
         client_options: Dict[str, Any] = {
@@ -55,14 +70,24 @@ class OpenSearchClient:
                 return {"index_name": self.index_name, "exists": False, "document_count": 0}
 
             stats_response = self.client.indices.stats(index=self.index_name)
-            index_stats = stats_response["indices"][self.index_name]["total"]
+            backing_indices = stats_response.get("indices", {})
+            document_count = sum(
+                item["total"]["docs"]["count"] for item in backing_indices.values()
+            )
+            deleted_count = sum(
+                item["total"]["docs"]["deleted"] for item in backing_indices.values()
+            )
+            size_in_bytes = sum(
+                item["total"]["store"]["size_in_bytes"] for item in backing_indices.values()
+            )
 
             return {
                 "index_name": self.index_name,
+                "backing_indices": sorted(backing_indices),
                 "exists": True,
-                "document_count": index_stats["docs"]["count"],
-                "deleted_count": index_stats["docs"]["deleted"],
-                "size_in_bytes": index_stats["store"]["size_in_bytes"],
+                "document_count": document_count,
+                "deleted_count": deleted_count,
+                "size_in_bytes": size_in_bytes,
             }
 
         except Exception as e:
@@ -70,39 +95,29 @@ class OpenSearchClient:
             return {"index_name": self.index_name, "exists": False, "document_count": 0, "error": str(e)}
 
     def setup_indices(self, force: bool = False) -> Dict[str, bool]:
-        """Setup the hybrid search index and RRF pipeline."""
+        """Provision the configured physical index and aliases for development."""
+        if force:
+            raise ValueError(
+                "Destructive force setup is disabled; use the versioned migration command"
+            )
         results = {}
-        results["hybrid_index"] = self._create_hybrid_index(force)
+        results["hybrid_index"] = self._create_hybrid_index()
         results["rrf_pipeline"] = self._create_rrf_pipeline(force)
         return results
 
-    def _create_hybrid_index(self, force: bool = False) -> bool:
-        """Create hybrid index for all search types (BM25, vector, hybrid).
-
-        :param force: If True, recreate index even if it exists
-        :returns: True if created, False if already exists
-        """
-        try:
-            if force and self.client.indices.exists(index=self.index_name):
-                self.client.indices.delete(index=self.index_name)
-                logger.info(f"Deleted existing hybrid index: {self.index_name}")
-
-            if not self.client.indices.exists(index=self.index_name):
-                self.client.indices.create(index=self.index_name, body=ARXIV_PAPERS_CHUNKS_MAPPING)
-                logger.info(f"Created hybrid index: {self.index_name}")
-                return True
-
-            logger.info(f"Hybrid index already exists: {self.index_name}")
-            return False
-
-        except Exception as e:
-            # Handle race condition when multiple workers start simultaneously:
-            # all check exists() -> False, all try to create, only one succeeds.
-            if "resource_already_exists_exception" in str(e):
-                logger.info(f"Hybrid index already exists (created by another worker): {self.index_name}")
-                return False
-            logger.error(f"Error creating hybrid index: {e}")
-            raise
+    def _create_hybrid_index(self) -> bool:
+        """Create one physical generation and atomically initialize both aliases."""
+        migrator = VersionedIndexMigrator(
+            self.client,
+            base_name=self.index_base_name,
+            read_alias=self.read_alias,
+            write_alias=self.write_alias,
+            mapping=ARXIV_PAPERS_CHUNKS_MAPPING,
+        )
+        return migrator.ensure_initial_generation(
+            self.physical_index_name,
+            source_index=self.index_base_name,
+        )
 
     def _create_rrf_pipeline(self, force: bool = False) -> bool:
         """Create RRF search pipeline for native hybrid search.
@@ -113,20 +128,15 @@ class OpenSearchClient:
         try:
             pipeline_id = HYBRID_RRF_PIPELINE["id"]
 
-            if force:
+            if not force:
                 try:
-                    self.client.ingest.get_pipeline(id=pipeline_id)
-                    self.client.ingest.delete_pipeline(id=pipeline_id)
-                    logger.info(f"Deleted existing RRF pipeline: {pipeline_id}")
-                except Exception:
+                    self.client.transport.perform_request(
+                        "GET", f"/_search/pipeline/{pipeline_id}"
+                    )
+                    logger.info(f"RRF pipeline already exists: {pipeline_id}")
+                    return False
+                except NotFoundError:
                     pass
-
-            try:
-                self.client.ingest.get_pipeline(id=pipeline_id)
-                logger.info(f"RRF pipeline already exists: {pipeline_id}")
-                return False
-            except Exception:
-                pass
             pipeline_body = {
                 "description": HYBRID_RRF_PIPELINE["description"],
                 "phase_results_processors": HYBRID_RRF_PIPELINE["phase_results_processors"],
@@ -336,7 +346,7 @@ class OpenSearchClient:
         try:
             chunk_data["embedding"] = embedding
 
-            response = self.client.index(index=self.index_name, body=chunk_data, refresh=True)
+            response = self.client.index(index=self._write_target(), body=chunk_data, refresh=True)
 
             return response["result"] in ["created", "updated"]
 
@@ -359,7 +369,7 @@ class OpenSearchClient:
                 chunk_data["embedding"] = chunk["embedding"]
 
                 action = {
-                    "_index": self.index_name,
+                    "_index": self._write_target(),
                     "_id": chunk["document_id"],
                     "_source": chunk_data,
                 }
@@ -400,7 +410,7 @@ class OpenSearchClient:
                     }
                 }
             response = self.client.delete_by_query(
-                index=self.index_name,
+                index=self._write_target(),
                 body={"query": query},
                 refresh=True,
             )
@@ -412,6 +422,10 @@ class OpenSearchClient:
         except Exception as e:
             logger.error(f"Error deleting chunks: {e}")
             return False
+
+    def _write_target(self) -> str:
+        """Return the write alias, retaining compatibility with lightweight test doubles."""
+        return getattr(self, "write_alias", self.index_name)
 
     def get_chunks_by_paper(self, arxiv_id: str) -> List[Dict[str, Any]]:
         """Get all chunks for a specific paper.

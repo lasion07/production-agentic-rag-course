@@ -46,21 +46,54 @@ characters. CA files must contain the issuing PEM chain rather than a server cer
 
    `docker compose --env-file /secure/production.env -f compose.production.yml config --quiet`
 
-5. Start serving:
+5. Back up PostgreSQL, then run the application schema migration as a one-off job:
+
+   `pg_dump --format=custom --file=rag-before-release.dump "$POSTGRES_DATABASE_URL"`
+
+   `docker compose --profile migration --env-file /secure/production.env -f compose.production.yml run --rm db-migrate`
+
+   The checked-in `5f2621c13b39` no-op baseline preserves revision continuity for legacy course databases;
+   the following revision performs the reviewed additive migration. Never replace this with `stamp head` on
+   a database whose columns have not been verified.
+
+6. Prepare the next OpenSearch generation and RRF pipeline without changing serving traffic. For the first migration from
+   the legacy concrete index, use `arxiv-papers-chunks` as the source; later releases can use the current
+   read alias:
+
+   `docker compose --profile migration --env-file /secure/production.env -f compose.production.yml run --rm opensearch-migrate python -m src.services.opensearch.migrate_cli prepare v1 --source-index arxiv-papers-chunks`
+
+7. Validate document count, representative BM25/vector/hybrid queries, mapping, and snapshot/restore
+   availability on `arxiv-papers-chunks-v1`. Then cut over read and write aliases atomically:
+
+   `docker compose --profile migration --env-file /secure/production.env -f compose.production.yml run --rm opensearch-migrate python -m src.services.opensearch.migrate_cli cutover v1`
+
+8. Start serving:
 
    `docker compose --env-file /secure/production.env -f compose.production.yml up -d gateway api`
 
-6. Run Airflow database migrations as a one-off release job, then start the optional scheduler profile:
+9. Run Airflow database migrations as a separate one-off release job, then start the optional scheduler
+   profile:
 
    `docker compose --profile ingestion --env-file /secure/production.env -f compose.production.yml up -d airflow-scheduler`
 
-7. Verify HTTPS `/api/v1/live`, then call protected `/api/v1/health` with a production API key.
+10. Verify HTTPS `/api/v1/live`, then call protected `/api/v1/health` with a production API key.
+
+For a new empty development environment, `compose.yml` runs `search-migrate ... bootstrap` as an explicit
+one-off dependency before API/Airflow startup. Neither application process creates mappings, aliases or
+pipelines during its own startup.
 
 ## Rotation and rollback
 
 - Rotate provider/service credentials by replacing mounted secret files and recreating only the affected
   containers. Keep two API keys during a client-key overlap window.
-- Roll back by restoring the previous immutable image reference and recreating API/scheduler. Caddy data is
-  persistent so certificate state survives application rollback.
-- This manifest deliberately performs no database or OpenSearch schema mutation. Release migrations and
-  index cutover are handled by PR-P0-04.
+- Before a PostgreSQL migration, take a managed snapshot or `pg_dump`. Prefer a forward-fix for additive
+  migrations; restore into a new database and switch the secret/connection string when rollback requires
+  destructive data reversal. Do not run an unreviewed downgrade against the only production copy.
+- Before OpenSearch migration, take a repository snapshot and retain the previous physical generation.
+  Roll both aliases back atomically with:
+
+  `docker compose --profile migration --env-file /secure/production.env -f compose.production.yml run --rm opensearch-migrate python -m src.services.opensearch.migrate_cli rollback v0`
+
+- Roll back application code by restoring the previous immutable image reference and recreating API/scheduler.
+  Do this only after confirming its schema compatibility. Caddy data is persistent, so certificate state
+  survives application rollback.

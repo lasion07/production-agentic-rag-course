@@ -1,6 +1,76 @@
 name: production-agentic-rag
 
 services:
+  db-migrate:
+    profiles: ["migration"]
+    image: ${RAG_API_IMAGE:?set immutable RAG_API_IMAGE}
+    user: "10001:10001"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      ENVIRONMENT: production
+      SERVICE_ROLE: ingestion
+      DEBUG: "false"
+      OPENSEARCH_SCHEMA_MANAGEMENT_ENABLED: "false"
+      POSTGRES_DATABASE_URL_FILE: /run/secrets/postgres_database_url
+      JINA_API_KEY_FILE: /run/secrets/jina_api_key
+      OPENSEARCH__HOST: ${OPENSEARCH_HOST:?set HTTPS OPENSEARCH_HOST}
+      OPENSEARCH__USERNAME: ${OPENSEARCH_USERNAME:?set OPENSEARCH_USERNAME}
+      OPENSEARCH__PASSWORD_FILE: /run/secrets/opensearch_password
+      OPENSEARCH__VERIFY_CERTS: "true"
+      OPENSEARCH__CA_CERTS: /run/secrets/opensearch_ca
+      OPENSEARCH__INDEX_GENERATION: ${OPENSEARCH__INDEX_GENERATION:-v1}
+      OPENSEARCH__READ_ALIAS_SUFFIX: ${OPENSEARCH__READ_ALIAS_SUFFIX:-read}
+      OPENSEARCH__WRITE_ALIAS_SUFFIX: ${OPENSEARCH__WRITE_ALIAS_SUFFIX:-write}
+    secrets:
+      - postgres_database_url
+      - jina_api_key
+      - opensearch_password
+      - opensearch_ca
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - edge
+
+  opensearch-migrate:
+    profiles: ["migration"]
+    image: ${RAG_API_IMAGE:?set immutable RAG_API_IMAGE}
+    user: "10001:10001"
+    entrypoint: ["/usr/local/bin/rag-entrypoint"]
+    environment:
+      ENVIRONMENT: production
+      SERVICE_ROLE: ingestion
+      DEBUG: "false"
+      OPENSEARCH_SCHEMA_MANAGEMENT_ENABLED: "false"
+      POSTGRES_DATABASE_URL_FILE: /run/secrets/postgres_database_url
+      JINA_API_KEY_FILE: /run/secrets/jina_api_key
+      OPENSEARCH__HOST: ${OPENSEARCH_HOST:?set HTTPS OPENSEARCH_HOST}
+      OPENSEARCH__USERNAME: ${OPENSEARCH_USERNAME:?set OPENSEARCH_USERNAME}
+      OPENSEARCH__PASSWORD_FILE: /run/secrets/opensearch_password
+      OPENSEARCH__VERIFY_CERTS: "true"
+      OPENSEARCH__CA_CERTS: /run/secrets/opensearch_ca
+      OPENSEARCH__INDEX_GENERATION: ${OPENSEARCH__INDEX_GENERATION:-v1}
+      OPENSEARCH__READ_ALIAS_SUFFIX: ${OPENSEARCH__READ_ALIAS_SUFFIX:-read}
+      OPENSEARCH__WRITE_ALIAS_SUFFIX: ${OPENSEARCH__WRITE_ALIAS_SUFFIX:-write}
+    secrets:
+      - postgres_database_url
+      - jina_api_key
+      - opensearch_password
+      - opensearch_ca
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - edge
+
   gateway:
     image: caddy:2.10-alpine
     restart: unless-stopped
@@ -62,6 +132,9 @@ services:
       OPENSEARCH__PASSWORD_FILE: /run/secrets/opensearch_password
       OPENSEARCH__VERIFY_CERTS: "true"
       OPENSEARCH__CA_CERTS: /run/secrets/opensearch_ca
+      OPENSEARCH__INDEX_GENERATION: ${OPENSEARCH__INDEX_GENERATION:-v1}
+      OPENSEARCH__READ_ALIAS_SUFFIX: ${OPENSEARCH__READ_ALIAS_SUFFIX:-read}
+      OPENSEARCH__WRITE_ALIAS_SUFFIX: ${OPENSEARCH__WRITE_ALIAS_SUFFIX:-write}
       REDIS__HOST: ${REDIS_HOST:?set REDIS_HOST}
       REDIS__PORT: ${REDIS_PORT:-6379}
       REDIS__PASSWORD_FILE: /run/secrets/redis_password
@@ -140,6 +213,9 @@ services:
       OPENSEARCH__PASSWORD_FILE: /run/secrets/opensearch_password
       OPENSEARCH__VERIFY_CERTS: "true"
       OPENSEARCH__CA_CERTS: /run/secrets/opensearch_ca
+      OPENSEARCH__INDEX_GENERATION: ${OPENSEARCH__INDEX_GENERATION:-v1}
+      OPENSEARCH__READ_ALIAS_SUFFIX: ${OPENSEARCH__READ_ALIAS_SUFFIX:-read}
+      OPENSEARCH__WRITE_ALIAS_SUFFIX: ${OPENSEARCH__WRITE_ALIAS_SUFFIX:-write}
     secrets:
       - airflow_database_url
       - postgres_database_url

@@ -163,6 +163,8 @@ class PaperRepository:
             select(Paper)
             .where(
                 Paper.source_version > Paper.indexed_version,
+                Paper.pdf_processed.is_(True),
+                Paper.raw_text.is_not(None),
                 Paper.index_status != PaperIndexStatus.DEAD_LETTER.value,
                 or_(
                     Paper.index_status == PaperIndexStatus.PENDING.value,

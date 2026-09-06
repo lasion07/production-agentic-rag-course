@@ -31,7 +31,7 @@ class Paper(Base):
 
     # Core arXiv metadata
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    arxiv_id = Column(String, unique=True, nullable=False, index=True)
+    arxiv_id = Column(String, unique=True, nullable=False)
     title = Column(String, nullable=False)
     authors = Column(JSON, nullable=False)
     abstract = Column(Text, nullable=False)

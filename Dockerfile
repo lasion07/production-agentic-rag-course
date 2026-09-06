@@ -18,6 +18,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Copy source code
 COPY src /app/src
+COPY alembic.ini /app/alembic.ini
+COPY migrations /app/migrations
 
 FROM python:3.12.8-slim AS final
 

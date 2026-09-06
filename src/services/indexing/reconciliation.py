@@ -57,6 +57,7 @@ class IndexReconciler:
         paper_ids: Optional[Sequence[UUID]] = None,
     ) -> dict:
         repository = PaperRepository(session)
+        papers_awaiting_content = 0
         if paper_ids is None:
             papers = repository.get_reconciliation_candidates(limit=self.batch_size)
         else:
@@ -65,10 +66,15 @@ class IndexReconciler:
             missing_ids = sorted(str(paper_id) for paper_id in set(paper_ids) - found_ids)
             if missing_ids:
                 raise RuntimeError(f"Stored paper IDs missing from PostgreSQL: {missing_ids}")
+            papers_awaiting_content = sum(
+                1 for paper in papers if not paper.pdf_processed or not paper.raw_text
+            )
             papers = [
                 paper
                 for paper in papers
                 if paper.source_version > paper.indexed_version
+                and paper.pdf_processed
+                and paper.raw_text
                 and paper.index_status != PaperIndexStatus.DEAD_LETTER.value
                 and self._is_due(paper)
             ]
@@ -78,6 +84,7 @@ class IndexReconciler:
             "papers_indexed": 0,
             "papers_retry_pending": 0,
             "papers_dead_letter": 0,
+            "papers_awaiting_content": papers_awaiting_content,
             "total_chunks_created": 0,
             "total_chunks_indexed": 0,
             "total_embeddings_generated": 0,

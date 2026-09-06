@@ -2,6 +2,35 @@
 # ports and intentionally weak credentials. Never deploy this file publicly;
 # use compose.production.yml and docs/production-deployment.md instead.
 services:
+  migrate:
+    build: .
+    container_name: rag-migrate
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
+    networks:
+      - rag-network
+
+  search-migrate:
+    build: .
+    container_name: rag-search-migrate
+    command: ["python", "-m", "src.services.opensearch.migrate_cli", "bootstrap"]
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - OPENSEARCH_HOST=http://opensearch:9200
+      - OPENSEARCH__HOST=http://opensearch:9200
+    networks:
+      - rag-network
+
   # API service
   api:
     build: .
@@ -11,6 +40,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      search-migrate:
+        condition: service_completed_successfully
       opensearch:
         condition: service_healthy
       redis:
@@ -106,6 +139,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      search-migrate:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:

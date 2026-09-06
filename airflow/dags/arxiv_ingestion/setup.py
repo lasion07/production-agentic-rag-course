@@ -1,7 +1,7 @@
 import logging
 
 from sqlalchemy import text
-from src.config import get_settings
+from src.services.opensearch.index_config_hybrid import HYBRID_RRF_PIPELINE
 
 from .common import get_cached_services
 
@@ -31,27 +31,32 @@ def setup_environment():
         except Exception as e:
             raise Exception(f"OpenSearch hybrid client connection failed: {e}")
 
-        settings = get_settings()
-        if settings.opensearch_schema_management_enabled:
-            setup_results = opensearch_client.setup_indices(force=False)
-            if setup_results.get("hybrid_index"):
-                logger.info("Hybrid search index created with vector support")
-            else:
-                logger.info("Hybrid search index already exists")
-
-            if setup_results.get("rrf_pipeline"):
-                logger.info("RRF pipeline created successfully")
-            else:
-                logger.info("RRF pipeline already exists")
-        else:
-            index_exists = opensearch_client.client.indices.exists(
-                index=opensearch_client.index_name
+        read_alias_exists = opensearch_client.client.indices.exists_alias(
+            name=opensearch_client.read_alias
+        )
+        write_alias_exists = opensearch_client.client.indices.exists_alias(
+            name=opensearch_client.write_alias
+        )
+        if not read_alias_exists or not write_alias_exists:
+            raise RuntimeError("Required OpenSearch read/write aliases are not provisioned")
+        read_targets = set(
+            opensearch_client.client.indices.get_alias(name=opensearch_client.read_alias)
+        )
+        write_targets = set(
+            opensearch_client.client.indices.get_alias(name=opensearch_client.write_alias)
+        )
+        index_exists = opensearch_client.client.indices.exists(
+            index=opensearch_client.index_name
+        )
+        if not index_exists or read_targets != write_targets or len(read_targets) != 1:
+            raise RuntimeError(
+                "OpenSearch aliases must resolve to the same single physical index"
             )
-            if not index_exists:
-                raise RuntimeError(
-                    f"Required OpenSearch index '{opensearch_client.index_name}' is not provisioned"
-                )
-            logger.info("OpenSearch schema is pre-provisioned; auto-setup disabled")
+        opensearch_client.client.transport.perform_request(
+            "GET",
+            f"/_search/pipeline/{HYBRID_RRF_PIPELINE['id']}",
+        )
+        logger.info("OpenSearch aliases and RRF pipeline are pre-provisioned")
 
         logger.info("Hybrid search setup completed")
 

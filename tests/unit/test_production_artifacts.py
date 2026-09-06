@@ -11,10 +11,20 @@ def test_production_compose_only_publishes_tls_gateway():
     manifest = yaml.safe_load((PROJECT_ROOT / "compose.production.yml").read_text())
     services = manifest["services"]
 
-    assert set(services) == {"gateway", "api", "airflow-scheduler"}
+    assert set(services) == {
+        "gateway",
+        "api",
+        "airflow-scheduler",
+        "db-migrate",
+        "opensearch-migrate",
+    }
     assert services["gateway"]["ports"] == ["80:80", "443:443"]
     assert "ports" not in services["api"]
     assert "ports" not in services["airflow-scheduler"]
+    assert "ports" not in services["db-migrate"]
+    assert "ports" not in services["opensearch-migrate"]
+    assert services["db-migrate"]["profiles"] == ["migration"]
+    assert services["opensearch-migrate"]["profiles"] == ["migration"]
     assert not ({"postgres", "redis", "opensearch", "langfuse-web"} & set(services))
 
 

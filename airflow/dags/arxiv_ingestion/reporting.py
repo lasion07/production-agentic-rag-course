@@ -50,16 +50,13 @@ def generate_daily_report(**context):
 
         if opensearch_client.health_check():
             try:
-                stats_response = opensearch_client.client.indices.stats(index=opensearch_client.index_name)
-
-                count_response = opensearch_client.client.count(index=opensearch_client.index_name)
-
-                index_stats = stats_response["indices"][opensearch_client.index_name]["total"]
+                index_stats = opensearch_client.get_index_stats()
 
                 report["opensearch_statistics"] = {
                     "index_name": opensearch_client.index_name,
-                    "document_count": count_response["count"],
-                    "index_size_mb": round(index_stats["store"]["size_in_bytes"] / (1024 * 1024), 2),
+                    "backing_indices": index_stats.get("backing_indices", []),
+                    "document_count": index_stats["document_count"],
+                    "index_size_mb": round(index_stats["size_in_bytes"] / (1024 * 1024), 2),
                 }
             except Exception as stats_error:
                 logger.error(f"Failed to get OpenSearch statistics: {stats_error}")

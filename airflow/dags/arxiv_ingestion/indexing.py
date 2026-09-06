@@ -117,9 +117,7 @@ def verify_hybrid_index(**context):
     try:
         opensearch_client = make_opensearch_client_fresh()
 
-        stats = opensearch_client.client.indices.stats(index=opensearch_client.index_name)
-
-        count = opensearch_client.client.count(index=opensearch_client.index_name)
+        stats = opensearch_client.get_index_stats()
 
         paper_count_query = {"aggs": {"unique_papers": {"cardinality": {"field": "arxiv_id"}}}, "size": 0}
 
@@ -129,10 +127,13 @@ def verify_hybrid_index(**context):
 
         result = {
             "index_name": opensearch_client.index_name,
-            "total_chunks": count["count"],
+            "backing_indices": stats.get("backing_indices", []),
+            "total_chunks": stats["document_count"],
             "unique_papers": unique_papers,
-            "avg_chunks_per_paper": (count["count"] / unique_papers if unique_papers > 0 else 0),
-            "index_size_mb": stats["indices"][opensearch_client.index_name]["total"]["store"]["size_in_bytes"] / (1024 * 1024),
+            "avg_chunks_per_paper": (
+                stats["document_count"] / unique_papers if unique_papers > 0 else 0
+            ),
+            "index_size_mb": stats["size_in_bytes"] / (1024 * 1024),
         }
 
         logger.info(

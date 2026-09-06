@@ -19,7 +19,7 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 - **Bằng chứng Week 7.6:** OpenAI full E2E HTTP 200/10,31s; Langfuse có 22 observations, 4.941 tokens, ~$0,00537; raw public-paper content capture đã được phê duyệt và kiểm chứng ở trace riêng
 - **Technical-debt verification:** 6 fault cases đạt 18/18; quantitative answer case đã chuyển xanh sau candidate reranking/context selection
 - **Bằng chứng Week 7.7:** 12 candidates → 3 final chunks; quantitative claim `56.4–68.2%` có đúng source; full suite 168 pass
-- **Production hardening:** PR-P0-01 API perimeter và PR-P0-02 deployment boundary đã hoàn thành; PR-P0-03 consistency/reconciliation đã code complete và chờ migration PR-P0-04
+- **Production hardening:** PR-P0-01 đến PR-P0-04 đã hoàn thành; migration drill PostgreSQL pass và OpenSearch cutover/rollback giữ đủ 81/81 chunks
 - **Technical debt:** Các lỗi source được hoãn có chủ đích đến sau khóa học và theo dõi trong backlog riêng
 - **Cần ôn lại:** ingestion ordering, serving dependencies và BM25 fallback
 
@@ -92,6 +92,7 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 
 1. [Production 02 — Deployment boundary](production-02-deployment-boundary.md)
 2. [Production 03 — Consistency và reconciliation](production-03-consistency-reconciliation.md)
+3. [Production 04 — Alembic và OpenSearch alias cutover](production-04-controlled-migrations.md)
 
 ## Cách sử dụng ghi chú
 

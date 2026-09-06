@@ -167,6 +167,24 @@ async def test_live_indexing_lease_prevents_duplicate_worker_claim():
 
 
 @pytest.mark.asyncio
+async def test_metadata_only_paper_does_not_consume_reconciliation_attempt():
+    paper = make_paper()
+    paper.pdf_processed = False
+    paper.raw_text = None
+    session = MagicMock()
+    session.scalars.return_value = [paper]
+    indexing = MagicMock()
+    indexing.reindex_paper = AsyncMock(return_value=complete_stats())
+
+    result = await IndexReconciler(indexing).reconcile(session, paper_ids=[paper.id])
+
+    assert result["papers_processed"] == 0
+    assert result["papers_awaiting_content"] == 1
+    assert paper.index_attempts == 0
+    indexing.reindex_paper.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_version_drift_is_reconciled_even_when_status_claims_indexed():
     paper = make_paper(source_version=3, indexed_version=2)
     paper.index_status = PaperIndexStatus.INDEXED.value
