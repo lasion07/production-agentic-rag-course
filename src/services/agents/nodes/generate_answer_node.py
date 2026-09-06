@@ -46,7 +46,7 @@ async def ainvoke_generate_answer_step(
         context = "No relevant documents found."
         logger.warning("No context available for answer generation")
 
-    logger.debug(f"Generating answer for query: {question[:100]}...")
+    logger.debug("Generating answer query_length=%s", len(question))
     logger.debug(f"Using context of length: {len(context)} characters")
 
     # Extract document chunks preview for logging
@@ -169,7 +169,7 @@ async def ainvoke_generate_answer_step(
             )
         else:
             answer = (
-                f"I apologize, but I encountered an error while generating the answer: {str(e)}\n\n"
+                "I could not generate an answer because the generation service is temporarily unavailable. "
                 "Please try again or rephrase your question."
             )
         generation_failed = True

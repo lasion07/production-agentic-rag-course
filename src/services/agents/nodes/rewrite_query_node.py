@@ -40,7 +40,7 @@ async def ainvoke_rewrite_query_step(
     original_question = state.get("original_query") or state["messages"][0].content
     current_attempt = state.get("retrieval_attempts", 0)
 
-    logger.debug(f"Rewriting query using LLM: {original_question[:100]}...")
+    logger.debug("Rewriting query using LLM original_length=%s", len(original_question))
 
     # Create span for query rewriting
     span = None
@@ -94,8 +94,13 @@ async def ainvoke_rewrite_query_step(
         reasoning = result.reasoning
 
         llm_duration = time.time() - llm_start
-        logger.info(f"Query rewritten in {llm_duration:.2f}s: '{original_question[:50]}...' -> '{rewritten_query[:50]}...'")
-        logger.debug(f"Rewriting reasoning: {reasoning}")
+        logger.info(
+            "Query rewritten in %.2fs original_length=%s rewritten_length=%s",
+            llm_duration,
+            len(original_question),
+            len(rewritten_query),
+        )
+        logger.debug("Rewrite reasoning length=%s", len(reasoning))
 
     except Exception as e:
         logger.error(f"Failed to rewrite query using LLM: {e}")

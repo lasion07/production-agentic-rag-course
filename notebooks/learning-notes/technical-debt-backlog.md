@@ -4,10 +4,13 @@ Quay lại: [Mục lục sổ học tập](README.md)
 
 Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học; chỉ triển khai sau khi hoàn thành khóa học, trừ khi lỗi chặn bài thực hành.
 
+Production readiness audit: [docs/production-readiness-audit.md](../../docs/production-readiness-audit.md)
+
 ## Quy ước
 
-- `P1`: ảnh hưởng correctness/availability production.
-- `P2`: ảnh hưởng reliability, observability hoặc hiệu năng.
+- `P0`: launch blocker về security, correctness, recoverability hoặc release safety.
+- `P1`: cần hoàn thành trước khi mở rộng production traffic.
+- `P2`: cải tiến hiệu năng, chi phí hoặc maintainability sau launch blockers.
 - Trạng thái được cập nhật theo từng mục sau đợt Week 7.5 hardening.
 
 ## Week 7.1–7.2
@@ -30,7 +33,7 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Source: agent ToolMessage/grading flow và `_extract_sources()`.
 - Hiện tại: generation có thể đọc tool context trong khi `relevant_sources` không được cập nhật, làm API trả sources rỗng.
 - Hướng sửa: một canonical relevant-document set sinh context, citation allowlist và API sources.
-- Trạng thái: **Partially resolved** — `relevant_documents` sinh generation context, source list và actual chunk count; citation allowlist/claim validation vẫn còn mở.
+- Trạng thái: **Resolved for deterministic v0** — `relevant_documents` sinh generation context, source list và actual chunk count; citation allowlist và numeric-claim validation đã chạy sau generation. Semantic claim-to-citation attribution được theo dõi tại `PR-P1-03` trong production readiness audit.
 
 ### TD-W7-04 — API báo requested K thay vì actual chunks — P2
 
@@ -139,8 +142,8 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 - Source: LLM provider factory, OpenAI adapter và deployment configuration.
 - Đã có: provider-neutral contract, Responses API, streaming, structured output, token usage, provider-aware health và model-aware cache identity.
 - Đã kiểm chứng: full E2E trên ba public arXiv papers và Langfuse trace audit; privacy masking, trace ID, business metadata và generation cost không bị đếm đôi.
-- Còn lại: model allowlist và cost budget/alert.
-- Trạng thái: **Partially resolved** — model snapshot allowlist và hard cap output tokens đã được thực thi fail-fast; cost alert trên Langfuse vẫn còn mở.
+- Đã có: model snapshot allowlist, hard cap output tokens, Metrics API checker và Langfuse native cost alert có Slack automation.
+- Trạng thái: **Resolved for production controls v0** — cost/context optimization tiếp tục ở mức `P2`, không phải launch blocker.
 
 ### TD-W7-20 — Câu trả lời bỏ sót quantitative claim — P2
 
@@ -159,8 +162,8 @@ Mục đích: ghi lại lỗi và khoảng trống phát hiện trong khi học;
 
 ## Trạng thái
 
-- Đã giải quyết: TD-W7-02, 04, 05, 06, 07, 08, 10, 12, 13, 14, 15, 17.
-- Đã giảm rủi ro nhưng còn việc: TD-W7-03, 09, 11.
+- Đã giải quyết: TD-W7-02, 03, 04, 05, 06, 07, 08, 10, 12, 13, 14, 15, 17, 18.
+- Đã giảm rủi ro nhưng còn việc: TD-W7-09, 11.
 - Chưa triển khai: TD-W7-01.
-- Đang thực hiện: TD-W7-18.
 - Cần mở rộng evaluation coverage: TD-W7-20.
+- Launch blockers tổng thể: `PR-P0-01` đã hoàn thành; tiếp tục `PR-P0-02` đến `PR-P0-06` trong production readiness audit.

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Request
 from sqlalchemy import text
 
+from ..api_errors import PUBLIC_ERROR_RESPONSES
 from ..dependencies import DatabaseDep, LLMDep, OpenSearchDep, SettingsDep
 from ..schemas.api.health import HealthResponse, ServiceStatus
 
-router = APIRouter()
+router = APIRouter(responses=PUBLIC_ERROR_RESPONSES)
 
 
 @router.get("/health", response_model=HealthResponse, tags=["Health"])

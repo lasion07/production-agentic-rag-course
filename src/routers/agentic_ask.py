@@ -1,14 +1,22 @@
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter, Request
+from src.api_errors import PUBLIC_ERROR_RESPONSES, PublicAPIError
 from src.dependencies import AgenticRAGDep, LangfuseDep
 from src.schemas.api.ask import AgenticAskResponse, AskRequest, FeedbackRequest, FeedbackResponse
+from src.security import APIIdentityDep, record_trace_owner, verify_trace_owner
 
-router = APIRouter(prefix="/api/v1", tags=["agentic-rag"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1", tags=["agentic-rag"], responses=PUBLIC_ERROR_RESPONSES)
 
 
 @router.post("/ask-agentic", response_model=AgenticAskResponse)
 async def ask_agentic(
     request: AskRequest,
+    http_request: Request,
     agentic_rag: AgenticRAGDep,
+    identity: APIIdentityDep,
 ) -> AgenticAskResponse:
     """
     Agentic RAG endpoint with intelligent retrieval and query refinement.
@@ -43,26 +51,23 @@ async def ask_agentic(
             top_k=request.top_k,
             use_hybrid=request.use_hybrid,
             categories=request.categories,
+            user_id=identity.user_id,
         )
 
         if result.get("business_status") == "retrieval_unavailable":
-            raise HTTPException(
+            raise PublicAPIError(
                 status_code=503,
-                detail={
-                    "business_status": "retrieval_unavailable",
-                    "message": result.get("answer", "Retrieval is temporarily unavailable."),
-                },
+                code="retrieval_unavailable",
+                message=result.get("answer", "Retrieval is temporarily unavailable."),
             )
         if result.get("business_status") == "deadline_exceeded":
-            raise HTTPException(
+            raise PublicAPIError(
                 status_code=504,
-                detail={
-                    "business_status": "deadline_exceeded",
-                    "message": result.get("answer", "The request deadline was exceeded."),
-                },
+                code="deadline_exceeded",
+                message=result.get("answer", "The request deadline was exceeded."),
             )
 
-        return AgenticAskResponse(
+        response = AgenticAskResponse(
             query=result["query"],
             answer=result["answer"],
             sources=result.get("sources", []),
@@ -79,19 +84,25 @@ async def ask_agentic(
             tool_failures=result.get("tool_failures", 0),
             fallbacks=result.get("fallbacks", 0),
         )
+        await record_trace_owner(http_request, identity, response.trace_id)
+        return response
 
-    except HTTPException:
+    except PublicAPIError:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+    except ValueError as exc:
+        logger.info("Agentic request rejected: %s", type(exc).__name__)
+        raise PublicAPIError(422, "invalid_request", "The request parameters are invalid.") from exc
+    except Exception as exc:
+        logger.exception("Agentic request failed request_id=%s", getattr(http_request.state, "request_id", "unknown"))
+        raise PublicAPIError(500, "internal_error", "The request could not be completed.") from exc
 
 
 @router.post("/feedback", response_model=FeedbackResponse)
 async def submit_feedback(
     request: FeedbackRequest,
+    http_request: Request,
     langfuse_tracer: LangfuseDep,
+    identity: APIIdentityDep,
 ) -> FeedbackResponse:
     """
     Submit user feedback for an agentic RAG response.
@@ -110,8 +121,9 @@ async def submit_feedback(
         HTTPException: If feedback submission fails
     """
     try:
+        await verify_trace_owner(http_request, identity, request.trace_id)
         if not langfuse_tracer:
-            raise HTTPException(status_code=503, detail="Langfuse tracing is disabled. Cannot submit feedback.")
+            raise PublicAPIError(503, "observability_unavailable", "Feedback is temporarily unavailable.")
 
         success = langfuse_tracer.submit_feedback(
             trace_id=request.trace_id,
@@ -125,9 +137,10 @@ async def submit_feedback(
 
             return FeedbackResponse(success=True, message="Feedback recorded successfully")
         else:
-            raise HTTPException(status_code=500, detail="Failed to submit feedback to Langfuse")
+            raise PublicAPIError(503, "feedback_unavailable", "Feedback is temporarily unavailable.")
 
-    except HTTPException:
+    except PublicAPIError:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error submitting feedback: {str(e)}")
+    except Exception as exc:
+        logger.exception("Feedback submission failed request_id=%s", getattr(http_request.state, "request_id", "unknown"))
+        raise PublicAPIError(500, "internal_error", "Feedback could not be submitted.") from exc

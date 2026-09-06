@@ -82,7 +82,7 @@ class JinaEmbeddingsClient:
             result = JinaEmbeddingResponse(**response.json())
             embedding = result.data[0]["embedding"]
 
-            logger.debug(f"Embedded query: '{query[:50]}...'")
+            logger.debug("Embedded query length=%s", len(query))
             return embedding
 
         except httpx.HTTPError as e:

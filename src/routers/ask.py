@@ -4,17 +4,19 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from src.api_errors import PUBLIC_ERROR_RESPONSES, PublicAPIError
 from src.dependencies import CacheDep, EmbeddingsDep, LangfuseDep, LLMDep, OpenSearchDep
 from src.schemas.api.ask import AskRequest, AskResponse
+from src.security import APIIdentityDep
 from src.services.langfuse.tracer import RAGTracer
 
 logger = logging.getLogger(__name__)
 
 # Two separate routers - one for regular ask, one for streaming
-ask_router = APIRouter(tags=["ask"])
-stream_router = APIRouter(tags=["stream"])
+ask_router = APIRouter(tags=["ask"], responses=PUBLIC_ERROR_RESPONSES)
+stream_router = APIRouter(tags=["stream"], responses=PUBLIC_ERROR_RESPONSES)
 
 
 def _usage_from_llm_chunk(chunk: Dict) -> Dict:
@@ -96,11 +98,13 @@ async def _prepare_chunks_and_sources(
 @ask_router.post("/ask", response_model=AskResponse)
 async def ask_question(
     request: AskRequest,
+    http_request: Request,
     opensearch_client: OpenSearchDep,
     embeddings_service: EmbeddingsDep,
     llm_client: LLMDep,
     langfuse_tracer: LangfuseDep,
     cache_client: CacheDep,
+    identity: APIIdentityDep,
 ) -> AskResponse:
     """Clean RAG endpoint with essential tracing and exact match caching."""
 
@@ -109,7 +113,7 @@ async def ask_question(
     model_name = request.model or llm_client.default_model
     effective_request = request.model_copy(update={"model": model_name})
 
-    with rag_tracer.trace_request("api_user", request.query) as trace:
+    with rag_tracer.trace_request(identity.user_id, request.query) as trace:
         try:
             # Check exact cache first
             cached_response = None
@@ -188,20 +192,22 @@ async def ask_question(
 
             return response
 
-        except Exception as e:
-            logger.error(f"Error processing request: {e}")
-            rag_tracer.mark_error(trace, e)
-            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as exc:
+            logger.exception("RAG request failed request_id=%s", getattr(http_request.state, "request_id", "unknown"))
+            rag_tracer.mark_error(trace, exc)
+            raise PublicAPIError(500, "internal_error", "The request could not be completed.") from exc
 
 
 @stream_router.post("/stream")
 async def ask_question_stream(
     request: AskRequest,
+    http_request: Request,
     opensearch_client: OpenSearchDep,
     embeddings_service: EmbeddingsDep,
     llm_client: LLMDep,
     langfuse_tracer: LangfuseDep,
     cache_client: CacheDep,
+    identity: APIIdentityDep,
 ) -> StreamingResponse:
     """Clean streaming RAG endpoint."""
 
@@ -211,7 +217,7 @@ async def ask_question_stream(
         model_name = request.model or llm_client.default_model
         effective_request = request.model_copy(update={"model": model_name})
 
-        with rag_tracer.trace_request("api_user", request.query) as trace:
+        with rag_tracer.trace_request(identity.user_id, request.query) as trace:
             try:
                 # Check exact cache first
                 if cache_client:
@@ -308,10 +314,18 @@ async def ask_question_stream(
                         stored = await cache_client.store_response(effective_request, response_to_cache)
                         rag_tracer.end_cache(cache_span, "stored" if stored else "error")
 
-            except Exception as e:
-                logger.error(f"Streaming error: {e}")
-                rag_tracer.mark_error(trace, e)
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            except Exception as exc:
+                logger.exception(
+                    "Streaming request failed request_id=%s",
+                    getattr(http_request.state, "request_id", "unknown"),
+                )
+                rag_tracer.mark_error(trace, exc)
+                error = {
+                    "code": "stream_failed",
+                    "message": "The response stream could not be completed.",
+                    "request_id": getattr(http_request.state, "request_id", "unknown"),
+                }
+                yield f"data: {json.dumps({'error': error})}\n\n"
 
     return StreamingResponse(
         generate_stream(), media_type="text/plain", headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}

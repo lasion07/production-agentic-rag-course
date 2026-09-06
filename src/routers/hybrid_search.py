@@ -1,24 +1,29 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from src.api_errors import PUBLIC_ERROR_RESPONSES, PublicAPIError
 from src.dependencies import EmbeddingsDep, OpenSearchDep
 from src.schemas.api.search import HybridSearchRequest, SearchHit, SearchResponse
+from src.security import APIIdentityDep
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/hybrid-search", tags=["hybrid-search"])
+router = APIRouter(prefix="/hybrid-search", tags=["hybrid-search"], responses=PUBLIC_ERROR_RESPONSES)
 
 
 @router.post("/", response_model=SearchResponse)
 async def hybrid_search(
-    request: HybridSearchRequest, opensearch_client: OpenSearchDep, embeddings_service: EmbeddingsDep
+    request: HybridSearchRequest,
+    opensearch_client: OpenSearchDep,
+    embeddings_service: EmbeddingsDep,
+    _identity: APIIdentityDep,
 ) -> SearchResponse:
     """
     Hybrid search endpoint supporting multiple search modes.
     """
     try:
         if not opensearch_client.health_check():
-            raise HTTPException(status_code=503, detail="Search service is currently unavailable")
+            raise PublicAPIError(503, "retrieval_unavailable", "Search is temporarily unavailable.")
 
         query_embedding = None
         if request.use_hybrid:
@@ -29,7 +34,7 @@ async def hybrid_search(
                 logger.warning(f"Failed to generate embeddings, falling back to BM25: {e}")
                 query_embedding = None
 
-        logger.info(f"Hybrid search: '{request.query}' (hybrid: {request.use_hybrid and query_embedding is not None})")
+        logger.info("Hybrid search started hybrid=%s", request.use_hybrid and query_embedding is not None)
 
         results = opensearch_client.search_unified(
             query=request.query,
@@ -72,8 +77,8 @@ async def hybrid_search(
         logger.info(f"Search completed: {search_response.total} results returned")
         return search_response
 
-    except HTTPException:
+    except PublicAPIError:
         raise
-    except Exception as e:
-        logger.error(f"Hybrid search error: {e}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    except Exception as exc:
+        logger.exception("Hybrid search failed")
+        raise PublicAPIError(500, "internal_error", "Search could not be completed.") from exc

@@ -187,6 +187,19 @@ class Settings(BaseConfigSettings):
     environment: Literal["development", "staging", "production"] = "development"
     service_name: str = "rag-api"
 
+    # Public API perimeter. Development remains backwards compatible, while
+    # production validation below refuses to start without both controls.
+    api_auth_enabled: bool = False
+    api_keys: List[SecretStr] = Field(default_factory=list)
+    api_rate_limit_enabled: bool = False
+    api_rate_limit_requests: int = Field(60, ge=1, le=100000)
+    api_global_rate_limit_requests: int = Field(600, ge=1, le=1000000)
+    api_rate_limit_window_seconds: int = Field(60, ge=1, le=86400)
+    api_security_redis_timeout_seconds: float = Field(0.25, gt=0.0, le=5.0)
+    feedback_ownership_ttl_seconds: int = Field(86400, ge=60, le=2592000)
+    trust_incoming_request_id: bool = False
+    allow_production_content_capture: bool = False
+
     postgres_database_url: str = "postgresql://rag_user:rag_password@localhost:5432/rag_db"
     postgres_echo_sql: bool = False
     postgres_pool_size: int = 20
@@ -238,6 +251,25 @@ class Settings(BaseConfigSettings):
             raise ValueError(
                 f"Configured OpenAI model '{self.selected_llm_model}' is not in OPENAI_ALLOWED_MODELS"
             )
+        if self.environment == "production":
+            violations = []
+            if self.debug:
+                violations.append("DEBUG must be false")
+            if not self.api_auth_enabled:
+                violations.append("API_AUTH_ENABLED must be true")
+            api_key_values = [secret.get_secret_value() for secret in self.api_keys]
+            if not api_key_values:
+                violations.append("API_KEYS must contain at least one key")
+            elif any(len(value) < 24 or "changeme" in value.lower() for value in api_key_values):
+                violations.append("API_KEYS must not contain short or placeholder keys")
+            if not self.api_rate_limit_enabled:
+                violations.append("API_RATE_LIMIT_ENABLED must be true")
+            if self.langfuse.capture_content and not self.allow_production_content_capture:
+                violations.append(
+                    "LANGFUSE_CAPTURE_CONTENT requires ALLOW_PRODUCTION_CONTENT_CAPTURE=true"
+                )
+            if violations:
+                raise ValueError("Unsafe production configuration: " + "; ".join(violations))
         return self
 
     @field_validator("postgres_database_url")

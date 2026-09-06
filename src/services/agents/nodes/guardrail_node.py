@@ -54,7 +54,7 @@ async def ainvoke_guardrail_step(
 
     # Get the latest user query
     query = get_latest_query(state["messages"])
-    logger.debug(f"Evaluating query: {query[:100]}...")
+    logger.debug("Evaluating query length=%s", len(query))
 
     # Create span for guardrail validation (v2 SDK)
     span = None
@@ -97,7 +97,11 @@ async def ainvoke_guardrail_step(
         logger.info("Invoking LLM for guardrail validation")
         response = await structured_llm.ainvoke(guardrail_prompt)
 
-        logger.info(f"Guardrail result - Score: {response.score}, Reason: {response.reason}")
+        logger.info(
+            "Guardrail result score=%s reason_length=%s",
+            response.score,
+            len(response.reason),
+        )
 
         # Update span with successful result
         if span:

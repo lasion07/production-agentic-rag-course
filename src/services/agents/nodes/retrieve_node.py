@@ -39,7 +39,7 @@ async def ainvoke_retrieve_step(
     updates = {}
     if state.get("original_query") is None:
         updates["original_query"] = question
-        logger.debug(f"Stored original query: {question[:100]}...")
+        logger.debug("Stored original query length=%s", len(question))
 
     # Create span for retrieval initiation
     span = None
@@ -108,7 +108,7 @@ async def ainvoke_retrieve_step(
         )
     ]
 
-    logger.debug(f"Created tool call for query: {question[:100]}...")
+    logger.debug("Created retrieval tool call query_length=%s", len(question))
 
     # Update span with successful tool call creation
     if span:

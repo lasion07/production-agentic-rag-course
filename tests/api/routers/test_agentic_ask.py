@@ -107,7 +107,8 @@ class TestAgenticAskEndpoint:
 
         assert response.status_code == 500
         data = response.json()
-        assert "detail" in data
+        assert data["error"]["code"] == "internal_error"
+        assert "Service error" not in response.text
 
     def test_ask_agentic_with_sources(self, client, mock_agentic_rag_service):
         """Test that sources are properly returned in response."""
@@ -250,6 +251,7 @@ class TestAgenticAskEndpoint:
             top_k=5,
             use_hybrid=True,
             categories=["cs.AI"],
+            user_id="development-anonymous",
         )
 
     def test_retrieval_unavailable_maps_to_http_503(self, client, mock_agentic_rag_service):
@@ -264,7 +266,7 @@ class TestAgenticAskEndpoint:
         response = client.post("/api/v1/ask-agentic", json={"query": "What is AI?"})
 
         assert response.status_code == 503
-        assert response.json()["detail"]["business_status"] == "retrieval_unavailable"
+        assert response.json()["error"]["code"] == "retrieval_unavailable"
 
     def test_deadline_exceeded_maps_to_http_504(self, client, mock_agentic_rag_service):
         mock_agentic_rag_service.ask = AsyncMock(
@@ -278,4 +280,4 @@ class TestAgenticAskEndpoint:
         response = client.post("/api/v1/ask-agentic", json={"query": "What is AI?"})
 
         assert response.status_code == 504
-        assert response.json()["detail"]["business_status"] == "deadline_exceeded"
+        assert response.json()["error"]["code"] == "deadline_exceeded"

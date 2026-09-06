@@ -187,7 +187,7 @@ class AgenticRAGService:
 
         logger.info("=" * 80)
         logger.info("Starting Agentic RAG Request")
-        logger.info(f"Query: {query}")
+        logger.info("Query length: %s", len(query))
         logger.info(f"User ID: {user_id}")
         logger.info(f"Model: {model_to_use}")
         logger.info("=" * 80)

@@ -3,11 +3,14 @@ import os
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from src.api_errors import register_exception_handlers
 from src.config import get_settings
 from src.db.factory import make_database
-from src.routers import agentic_ask, hybrid_search, ping
+from src.middlewares import RequestContextMiddleware
+from src.routers import agentic_ask, hybrid_search, live, ping
 from src.routers.ask import ask_router, stream_router
+from src.security import enforce_api_access
 from src.services.agents.factory import make_agentic_rag_service
 from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
@@ -127,15 +130,29 @@ async def lifespan(app: FastAPI):
     logger.info("API shutdown complete")
 
 
+_bootstrap_settings = get_settings()
+_production_docs_disabled = _bootstrap_settings.environment == "production"
+
 app = FastAPI(
     title="arXiv Paper Curator API",
     description="Personal arXiv CS.AI paper curator with RAG capabilities",
     version=os.getenv("APP_VERSION", "0.1.0"),
     lifespan=lifespan,
+    docs_url=None if _production_docs_disabled else "/docs",
+    redoc_url=None if _production_docs_disabled else "/redoc",
+    openapi_url=None if _production_docs_disabled else "/openapi.json",
 )
 
+app.add_middleware(RequestContextMiddleware)
+register_exception_handlers(app)
+
 # Include routers
-app.include_router(ping.router, prefix="/api/v1")  # Health check endpoint
+app.include_router(live.router, prefix="/api/v1")  # Public process liveness only
+app.include_router(
+    ping.router,
+    prefix="/api/v1",
+    dependencies=[Depends(enforce_api_access)],
+)  # Detailed dependency health is protected
 app.include_router(hybrid_search.router, prefix="/api/v1")  # Search chunks with BM25/hybrid
 app.include_router(ask_router, prefix="/api/v1")  # RAG question answering with LLM
 app.include_router(stream_router, prefix="/api/v1")  # Streaming RAG responses

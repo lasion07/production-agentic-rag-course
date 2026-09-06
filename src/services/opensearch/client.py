@@ -243,7 +243,7 @@ class OpenSearchClient:
 
             results["hits"].append(chunk)
 
-        logger.info(f"BM25 search for '{query[:50]}...' returned {results['total']} results")
+        logger.info("BM25 search returned %s results", results["total"])
         return results
 
     def _search_hybrid_native(
@@ -298,7 +298,7 @@ class OpenSearchClient:
             results["hits"].append(chunk)
 
         results["total"] = len(results["hits"])
-        logger.info(f"Native hybrid search for '{query[:50]}...' returned {results['total']} results")
+        logger.info("Native hybrid search returned %s results", results["total"])
         return results
 
     def search_chunks_hybrid(
