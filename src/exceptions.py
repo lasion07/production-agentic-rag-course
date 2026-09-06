@@ -10,6 +10,10 @@ class PaperNotSaved(RepositoryException):
     """Exception raised when paper data is not saved."""
 
 
+class StaleIndexClaimError(RepositoryException):
+    """Raised when an expired/superseded indexing worker mutates durable state."""
+
+
 class ParsingException(Exception):
     """Base exception for parsing-related errors."""
 

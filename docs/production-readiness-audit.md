@@ -97,6 +97,16 @@ The current Compose file is appropriate for local learning only. Reusing it as a
 
 ### PR-P0-03 — Make ingestion and indexing recoverably consistent
 
+**Implementation status: Code complete, migration pending (2026-09-06).** PostgreSQL now owns a durable
+paper/index state machine with source/index versions, attempts, lease/retry timestamps and sanitized errors.
+Ingestion commits or rolls back one paper at a time, preserves last-good parsed content and passes exact paper
+IDs to indexing. OpenSearch chunk writes use deterministic paper/version/chunk IDs, while fenced claim tokens
+prevent an older worker from acknowledging a newer source version. An hourly Airflow reconciler claims work
+with leases, retries with exponential backoff and records exhausted work as dead-letter with a critical alert
+hook. The non-atomic `is_active/update_by_query` approach is intentionally excluded; atomic visibility moves
+to versioned-index alias cutover in PR-P0-04. Applying these model/mapping changes
+to an existing environment is intentionally deferred to the controlled migration work in PR-P0-04.
+
 **Evidence**
 
 - The Paper model has no `source_version`, `indexed_version`, `index_status`, retry metadata, or last error in `src/models/paper.py`.

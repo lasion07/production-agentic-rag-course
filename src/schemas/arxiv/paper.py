@@ -59,6 +59,18 @@ class PaperResponse(PaperBase):
     pdf_processed: bool = Field(False, description="Whether PDF was successfully processed")
     pdf_processing_date: Optional[datetime] = Field(None, description="When PDF was processed")
 
+    # Search-index consistency state
+    source_version: int
+    indexed_version: int
+    index_status: str
+    index_attempts: int
+    index_claim_token: Optional[str] = None
+    last_index_attempt_at: Optional[datetime] = None
+    index_lease_expires_at: Optional[datetime] = None
+    next_index_retry_at: Optional[datetime] = None
+    indexed_at: Optional[datetime] = None
+    last_index_error: Optional[str] = None
+
     # Timestamps
     created_at: datetime
     updated_at: datetime

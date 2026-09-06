@@ -170,7 +170,9 @@ class OpenSearchClient:
             }
 
             if filter_clause:
-                search_body["query"] = {"bool": {"must": [search_body["query"]], "filter": filter_clause}}
+                search_body["query"] = {
+                    "bool": {"must": [search_body["query"]], "filter": filter_clause}
+                }
 
             response = self.client.search(index=self.index_name, body=search_body)
 
@@ -356,10 +358,20 @@ class OpenSearchClient:
                 chunk_data = chunk["chunk_data"].copy()
                 chunk_data["embedding"] = chunk["embedding"]
 
-                action = {"_index": self.index_name, "_source": chunk_data}
+                action = {
+                    "_index": self.index_name,
+                    "_id": chunk["document_id"],
+                    "_source": chunk_data,
+                }
                 actions.append(action)
 
-            success, failed = helpers.bulk(self.client, actions, refresh=True)
+            success, failed = helpers.bulk(
+                self.client,
+                actions,
+                refresh=True,
+                raise_on_error=False,
+                raise_on_exception=False,
+            )
 
             logger.info(f"Bulk indexed {success} chunks, {len(failed)} failed")
             return {"success": success, "failed": len(failed)}
@@ -368,15 +380,29 @@ class OpenSearchClient:
             logger.error(f"Bulk chunk indexing error: {e}")
             raise
 
-    def delete_paper_chunks(self, arxiv_id: str) -> bool:
+    def delete_paper_chunks(self, arxiv_id: str, *, before_version: Optional[int] = None) -> bool:
         """Delete all chunks for a specific paper.
 
         :param arxiv_id: ArXiv ID of the paper
         :returns: True if deletion was successful
         """
         try:
+            query: Dict[str, Any] = {"term": {"arxiv_id": arxiv_id}}
+            if before_version is not None:
+                query = {
+                    "bool": {
+                        "filter": [{"term": {"arxiv_id": arxiv_id}}],
+                        "should": [
+                            {"range": {"source_version": {"lt": before_version}}},
+                            {"bool": {"must_not": {"exists": {"field": "source_version"}}}},
+                        ],
+                        "minimum_should_match": 1,
+                    }
+                }
             response = self.client.delete_by_query(
-                index=self.index_name, body={"query": {"term": {"arxiv_id": arxiv_id}}}, refresh=True
+                index=self.index_name,
+                body={"query": query},
+                refresh=True,
             )
 
             deleted = response.get("deleted", 0)

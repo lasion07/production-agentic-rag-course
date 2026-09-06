@@ -26,6 +26,7 @@ ARXIV_PAPERS_CHUNKS_MAPPING = {
             "chunk_id": {"type": "keyword"},
             "arxiv_id": {"type": "keyword"},
             "paper_id": {"type": "keyword"},
+            "source_version": {"type": "integer"},
             "chunk_index": {"type": "integer"},
             "chunk_text": {
                 "type": "text",

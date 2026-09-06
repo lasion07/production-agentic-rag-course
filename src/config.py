@@ -227,6 +227,11 @@ class Settings(BaseConfigSettings):
     postgres_pool_size: int = 20
     postgres_max_overflow: int = 0
 
+    index_reconciliation_batch_size: int = Field(100, ge=1, le=1000)
+    index_reconciliation_max_attempts: int = Field(3, ge=1, le=20)
+    index_reconciliation_retry_base_seconds: int = Field(300, ge=1, le=86400)
+    index_reconciliation_lease_seconds: int = Field(900, ge=30, le=86400)
+
     ollama_host: str = "http://localhost:11434"
     ollama_model: str = "llama3.2:1b"
     ollama_timeout: int = 300

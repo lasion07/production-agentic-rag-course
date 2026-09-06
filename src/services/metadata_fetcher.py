@@ -88,6 +88,8 @@ class MetadataFetcher:
             "pdfs_downloaded": 0,
             "pdfs_parsed": 0,
             "papers_stored": 0,
+            "stored_paper_ids": [],
+            "indexable_paper_ids": [],
             "papers_indexed": 0,
             "errors": [],
             "processing_time": 0,
@@ -118,8 +120,14 @@ class MetadataFetcher:
             # Step 3: Store to database if requested
             if store_to_db and db_session:
                 logger.info("Step 3: Storing papers to database...")
-                stored_count = self._store_papers_to_db(papers, pdf_results.get("parsed_papers", {}), db_session)
-                results["papers_stored"] = stored_count
+                storage_result = self._store_papers_to_db(
+                    papers,
+                    pdf_results.get("parsed_papers", {}),
+                    db_session,
+                    storage_errors=results["errors"],
+                )
+                results.update(storage_result)
+                results["papers_stored"] = len(storage_result["stored_paper_ids"])
             elif store_to_db:
                 logger.warning("Database storage requested but no session provided")
                 results["errors"].append("Database session not provided for storage")
@@ -331,7 +339,8 @@ class MetadataFetcher:
         papers: List[ArxivPaper],
         parsed_papers: Dict[str, ParsedPaper],
         db_session: Session,
-    ) -> int:
+        storage_errors: Optional[List[str]] = None,
+    ) -> Dict[str, List[str]]:
         """
         Store papers and parsed content to database with comprehensive content storage.
 
@@ -341,10 +350,12 @@ class MetadataFetcher:
             db_session: Database session
 
         Returns:
-            Number of papers stored successfully
+            Stable database IDs for papers stored successfully and the subset
+            whose parsed content is ready for indexing.
         """
         paper_repo = PaperRepository(db_session)
-        stored_count = 0
+        stored_paper_ids: List[str] = []
+        indexable_paper_ids: List[str] = []
 
         for paper in papers:
             try:
@@ -383,23 +394,27 @@ class MetadataFetcher:
                 stored_paper = paper_repo.upsert(paper_create)
 
                 if stored_paper:
-                    stored_count += 1
+                    db_session.commit()
+                    stored_paper_ids.append(str(stored_paper.id))
+                    if paper_create.pdf_processed and paper_create.raw_text:
+                        indexable_paper_ids.append(str(stored_paper.id))
                     content_info = "with parsed content" if parsed_paper else "metadata only"
                     logger.debug(f"Stored paper {paper.arxiv_id} to database ({content_info})")
 
             except Exception as e:
+                db_session.rollback()
                 logger.error(f"Failed to store paper {paper.arxiv_id}: {e}")
+                if storage_errors is not None:
+                    storage_errors.append(f"Database storage failed: {paper.arxiv_id}")
 
-        # Commit all changes
-        try:
-            db_session.commit()
-            logger.info(f"Committed {stored_count} papers to database with full content storage")
-        except Exception as e:
-            logger.error(f"Failed to commit papers to database: {e}")
-            db_session.rollback()
-            stored_count = 0
+        logger.info(
+            f"Committed {len(stored_paper_ids)} papers to database with full content storage"
+        )
 
-        return stored_count
+        return {
+            "stored_paper_ids": stored_paper_ids,
+            "indexable_paper_ids": indexable_paper_ids,
+        }
 
 
 def make_metadata_fetcher(

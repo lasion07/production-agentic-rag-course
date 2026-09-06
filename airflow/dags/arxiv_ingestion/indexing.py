@@ -1,39 +1,26 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
+from src.config import get_settings
 from src.db.factory import make_database
 from src.services.indexing.factory import make_hybrid_indexing_service
+from src.services.indexing.reconciliation import IndexReconciler
 from src.services.opensearch.factory import make_opensearch_client_fresh
 
 logger = logging.getLogger(__name__)
 
 
-async def _index_papers_with_chunks(papers):
-    """Async helper to index papers with chunking and embeddings."""
-    indexing_service = make_hybrid_indexing_service()
-
-    papers_data = []
-    for paper in papers:
-        if hasattr(paper, "__dict__"):
-            paper_dict = {
-                "id": str(paper.id),
-                "arxiv_id": paper.arxiv_id,
-                "title": paper.title,
-                "authors": paper.authors,
-                "abstract": paper.abstract,
-                "categories": paper.categories,
-                "published_date": paper.published_date,
-                "raw_text": paper.raw_text,
-                "sections": paper.sections,
-            }
-        else:
-            paper_dict = paper
-        papers_data.append(paper_dict)
-
-    stats = await indexing_service.index_papers_batch(papers=papers_data, replace_existing=True)
-
-    return stats
+async def _run_reconciliation(session, paper_ids=None):
+    settings = get_settings()
+    reconciler = IndexReconciler(
+        make_hybrid_indexing_service(settings),
+        max_attempts=settings.index_reconciliation_max_attempts,
+        retry_base_seconds=settings.index_reconciliation_retry_base_seconds,
+        lease_seconds=settings.index_reconciliation_lease_seconds,
+        batch_size=settings.index_reconciliation_batch_size,
+    )
+    return await reconciler.reconcile(session, paper_ids=paper_ids)
 
 
 def index_papers_hybrid(**context):
@@ -55,23 +42,35 @@ def index_papers_hybrid(**context):
             fetch_results = ti.xcom_pull(task_ids="fetch_daily_papers", key="fetch_results")
 
         with database.get_session() as session:
-            from src.models.paper import Paper
-
-            if fetch_results and fetch_results.get("papers_stored", 0) > 0:
-                from sqlalchemy import desc
-
-                papers = session.query(Paper).order_by(desc(Paper.created_at)).limit(fetch_results["papers_stored"]).all()
-            else:
-                cutoff_date = datetime.now(timezone.utc) - timedelta(days=1)
-                papers = session.query(Paper).filter(Paper.created_at >= cutoff_date).all()
-
-            if not papers:
-                logger.info("No papers to index for hybrid search")
-                return {"papers_indexed": 0, "chunks_created": 0}
-
-            logger.info(f"Indexing {len(papers)} papers for hybrid search")
-
-            stats = asyncio.run(_index_papers_with_chunks(papers))
+            paper_ids = (fetch_results or {}).get("indexable_paper_ids", [])
+            if not paper_ids:
+                if fetch_results and fetch_results.get("papers_stored", 0) > 0:
+                    logger.info(
+                        "Stored papers contain no parsed content; exact-ID indexing is a successful no-op"
+                    )
+                    return {
+                        "papers_processed": 0,
+                        "papers_indexed": 0,
+                        "papers_awaiting_content": fetch_results["papers_stored"],
+                        "total_chunks_created": 0,
+                        "total_chunks_indexed": 0,
+                        "total_embeddings_generated": 0,
+                        "total_errors": 0,
+                    }
+                if fetch_results and fetch_results.get("papers_fetched", 0) == 0:
+                    logger.info("No papers fetched; exact-ID indexing is a successful no-op")
+                    return {
+                        "papers_processed": 0,
+                        "papers_indexed": 0,
+                        "total_chunks_created": 0,
+                        "total_chunks_indexed": 0,
+                        "total_embeddings_generated": 0,
+                        "total_errors": 0,
+                    }
+                raise RuntimeError("Indexing requires exact indexable_paper_ids from ingestion")
+            stable_ids = [UUID(value) for value in paper_ids]
+            logger.info(f"Indexing {len(stable_ids)} exact papers for hybrid search")
+            stats = asyncio.run(_run_reconciliation(session, stable_ids))
 
             logger.info(
                 f"Hybrid indexing complete: {stats['papers_processed']} papers, "
@@ -82,11 +81,35 @@ def index_papers_hybrid(**context):
             if ti:
                 ti.xcom_push(key="hybrid_index_stats", value=stats)
 
+            if stats["total_errors"]:
+                raise RuntimeError(
+                    f"Hybrid indexing left {stats['total_errors']} paper(s) inconsistent"
+                )
+
             return stats
 
     except Exception as e:
         logger.error(f"Failed to index papers for hybrid search: {e}")
         raise
+
+
+def reconcile_index_consistency(**context):
+    """Periodic worker that heals due PostgreSQL/OpenSearch inconsistencies."""
+    database = make_database()
+    with database.get_session() as session:
+        stats = asyncio.run(_run_reconciliation(session))
+
+    logger.info(
+        "Reconciliation complete: processed=%s indexed=%s retry_pending=%s dead_letter=%s",
+        stats["papers_processed"],
+        stats["papers_indexed"],
+        stats["papers_retry_pending"],
+        stats["papers_dead_letter"],
+    )
+    ti = context.get("ti")
+    if ti:
+        ti.xcom_push(key="reconciliation_stats", value=stats)
+    return stats
 
 
 def verify_hybrid_index(**context):

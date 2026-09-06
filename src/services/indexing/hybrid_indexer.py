@@ -9,6 +9,15 @@ from .text_chunker import TextChunker
 logger = logging.getLogger(__name__)
 
 
+def build_chunk_document_id(*, paper_id: str, source_version: int, chunk_index: int) -> str:
+    """Return a stable OpenSearch ID for idempotent delivery and replay."""
+    if not paper_id:
+        raise ValueError("paper_id is required for deterministic chunk identity")
+    if source_version < 1 or chunk_index < 0:
+        raise ValueError("source_version and chunk_index must be non-negative")
+    return f"{paper_id}:v{source_version}:c{chunk_index}"
+
+
 class HybridIndexingService:
     """Service for indexing papers with chunking and embeddings for hybrid search.
 
@@ -39,6 +48,7 @@ class HybridIndexingService:
         """
         arxiv_id = paper_data.get("arxiv_id")
         paper_id = str(paper_data.get("id", ""))
+        source_version = int(paper_data.get("source_version", 1))
 
         if not arxiv_id:
             logger.error("Paper missing arxiv_id")
@@ -80,6 +90,7 @@ class HybridIndexingService:
                 chunk_data = {
                     "arxiv_id": chunk.arxiv_id,
                     "paper_id": chunk.paper_id,
+                    "source_version": source_version,
                     "chunk_index": chunk.metadata.chunk_index,
                     "chunk_text": chunk.text,
                     "chunk_word_count": chunk.metadata.word_count,
@@ -97,7 +108,19 @@ class HybridIndexingService:
                     "published_date": paper_data.get("published_date"),
                 }
 
-                chunks_with_embeddings.append({"chunk_data": chunk_data, "embedding": embedding})
+                document_id = build_chunk_document_id(
+                    paper_id=paper_id or arxiv_id,
+                    source_version=source_version,
+                    chunk_index=chunk.metadata.chunk_index,
+                )
+                chunk_data["chunk_id"] = document_id
+                chunks_with_embeddings.append(
+                    {
+                        "document_id": document_id,
+                        "chunk_data": chunk_data,
+                        "embedding": embedding,
+                    }
+                )
 
             # Step 4: Index chunks into OpenSearch
             results = self.opensearch_client.bulk_index_chunks(chunks_with_embeddings)
@@ -133,12 +156,22 @@ class HybridIndexingService:
         for paper in papers:
             arxiv_id = paper.get("arxiv_id")
 
-            # Optionally delete existing chunks
-            if replace_existing and arxiv_id:
-                self.opensearch_client.delete_paper_chunks(arxiv_id)
-
             # Index the paper
             stats = await self.index_paper(paper)
+
+            # Cleanup only after the complete replacement is searchable. A
+            # failed or partial bulk request leaves the last good version intact.
+            if (
+                arxiv_id
+                and stats["errors"] == 0
+                and stats["chunks_created"] > 0
+                and stats["chunks_indexed"] == stats["chunks_created"]
+            ):
+                if replace_existing:
+                    self.opensearch_client.delete_paper_chunks(
+                        arxiv_id,
+                        before_version=int(paper.get("source_version", 1)),
+                    )
 
             # Update totals
             total_stats["papers_processed"] += 1
@@ -155,16 +188,20 @@ class HybridIndexingService:
         return total_stats
 
     async def reindex_paper(self, arxiv_id: str, paper_data: Dict) -> Dict[str, int]:
-        """Reindex a paper by deleting old chunks and creating new ones.
+        """Reindex a paper without deleting its last good version first.
 
         :param arxiv_id: ArXiv ID of the paper
         :param paper_data: Updated paper data
         :returns: Indexing statistics
         """
-        # Delete existing chunks
-        deleted = self.opensearch_client.delete_paper_chunks(arxiv_id)
-        if deleted:
-            logger.info(f"Deleted existing chunks for paper {arxiv_id}")
-
-        # Index with new data
-        return await self.index_paper(paper_data)
+        stats = await self.index_paper(paper_data)
+        if (
+            stats["errors"] == 0
+            and stats["chunks_created"] > 0
+            and stats["chunks_indexed"] == stats["chunks_created"]
+        ):
+            self.opensearch_client.delete_paper_chunks(
+                arxiv_id,
+                before_version=int(paper_data.get("source_version", 1)),
+            )
+        return stats
