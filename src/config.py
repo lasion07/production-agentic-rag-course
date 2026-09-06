@@ -1,12 +1,19 @@
 import os
 from pathlib import Path
 from typing import List, Literal, Optional
+from urllib.parse import parse_qs, urlparse
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).parent.parent
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
+
+def _is_placeholder_secret(value: str, *, min_length: int = 16) -> bool:
+    normalized = value.strip().lower()
+    markers = ("changeme", "replace-me", "replace_me", "example", "password", "secret")
+    return len(value.strip()) < min_length or any(marker in normalized for marker in markers)
 
 
 class BaseConfigSettings(BaseSettings):
@@ -92,6 +99,10 @@ class OpenSearchSettings(BaseConfigSettings):
     )
 
     host: str = "http://localhost:9200"
+    username: str = ""
+    password: SecretStr = SecretStr("")
+    verify_certs: bool = False
+    ca_certs: Optional[str] = None
     index_name: str = "arxiv-papers"
     chunk_index_suffix: str = "chunks"  # Creates single hybrid index: {index_name}-{suffix}
     max_text_size: int = 1000000
@@ -112,6 +123,7 @@ class LangfuseSettings(BaseConfigSettings):
         extra="ignore",
         frozen=True,
         case_sensitive=False,
+        populate_by_name=True,
     )
 
     # Prefer the official SDK environment variables while retaining legacy
@@ -120,7 +132,9 @@ class LangfuseSettings(BaseConfigSettings):
         "", validation_alias=AliasChoices("LANGFUSE_PUBLIC_KEY", "LANGFUSE__PUBLIC_KEY")
     )
     secret_key: str = Field(
-        "", validation_alias=AliasChoices("LANGFUSE_SECRET_KEY", "LANGFUSE__SECRET_KEY")
+        "",
+        validation_alias=AliasChoices("LANGFUSE_SECRET_KEY", "LANGFUSE__SECRET_KEY"),
+        repr=False,
     )
     base_url: str = Field(
         "https://cloud.langfuse.com",
@@ -158,7 +172,10 @@ class RedisSettings(BaseConfigSettings):
 
     host: str = "localhost"
     port: int = 6379
-    password: str = ""
+    password: str = Field("", repr=False)
+    ssl: bool = False
+    ssl_ca_certs: Optional[str] = None
+    ssl_cert_reqs: Literal["required", "optional", "none"] = "required"
     db: int = 0
     decode_responses: bool = True
     socket_timeout: int = 30
@@ -177,7 +194,7 @@ class TelegramSettings(BaseConfigSettings):
         case_sensitive=False,
     )
 
-    bot_token: str = ""
+    bot_token: str = Field("", repr=False)
     enabled: bool = False
 
 
@@ -186,6 +203,8 @@ class Settings(BaseConfigSettings):
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
     service_name: str = "rag-api"
+    service_role: Literal["api", "ingestion"] = "api"
+    opensearch_schema_management_enabled: bool = True
 
     # Public API perimeter. Development remains backwards compatible, while
     # production validation below refuses to start without both controls.
@@ -200,7 +219,10 @@ class Settings(BaseConfigSettings):
     trust_incoming_request_id: bool = False
     allow_production_content_capture: bool = False
 
-    postgres_database_url: str = "postgresql://rag_user:rag_password@localhost:5432/rag_db"
+    postgres_database_url: str = Field(
+        "postgresql://rag_user:rag_password@localhost:5432/rag_db",
+        repr=False,
+    )
     postgres_echo_sql: bool = False
     postgres_pool_size: int = 20
     postgres_max_overflow: int = 0
@@ -225,7 +247,7 @@ class Settings(BaseConfigSettings):
     openai_max_output_tokens: int = Field(512, ge=1, le=128000)
 
     # Jina AI embeddings configuration
-    jina_api_key: str = ""
+    jina_api_key: str = Field("", repr=False)
 
     arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
     pdf_parser: PDFParserSettings = Field(default_factory=PDFParserSettings)
@@ -255,19 +277,70 @@ class Settings(BaseConfigSettings):
             violations = []
             if self.debug:
                 violations.append("DEBUG must be false")
-            if not self.api_auth_enabled:
-                violations.append("API_AUTH_ENABLED must be true")
-            api_key_values = [secret.get_secret_value() for secret in self.api_keys]
-            if not api_key_values:
-                violations.append("API_KEYS must contain at least one key")
-            elif any(len(value) < 24 or "changeme" in value.lower() for value in api_key_values):
-                violations.append("API_KEYS must not contain short or placeholder keys")
-            if not self.api_rate_limit_enabled:
-                violations.append("API_RATE_LIMIT_ENABLED must be true")
-            if self.langfuse.capture_content and not self.allow_production_content_capture:
-                violations.append(
-                    "LANGFUSE_CAPTURE_CONTENT requires ALLOW_PRODUCTION_CONTENT_CAPTURE=true"
-                )
+            if self.opensearch_schema_management_enabled:
+                violations.append("OPENSEARCH_SCHEMA_MANAGEMENT_ENABLED must be false")
+            database_url = urlparse(self.postgres_database_url)
+            database_query = parse_qs(database_url.query)
+            if not database_url.hostname or not database_url.username or not database_url.password:
+                violations.append("POSTGRES_DATABASE_URL must include an authenticated remote database")
+            elif _is_placeholder_secret(database_url.password):
+                violations.append("POSTGRES_DATABASE_URL must not contain a placeholder password")
+            if database_query.get("sslmode", [""])[0] not in {"require", "verify-ca", "verify-full"}:
+                violations.append("POSTGRES_DATABASE_URL must require TLS with sslmode")
+
+            opensearch_password = self.opensearch.password.get_secret_value()
+            opensearch_url = urlparse(self.opensearch.host)
+            if opensearch_url.scheme != "https":
+                violations.append("OPENSEARCH__HOST must use HTTPS")
+            if opensearch_url.username or opensearch_url.password:
+                violations.append("OpenSearch credentials must not be embedded in OPENSEARCH__HOST")
+            if not self.opensearch.verify_certs:
+                violations.append("OPENSEARCH__VERIFY_CERTS must be true")
+            if not self.opensearch.username or _is_placeholder_secret(opensearch_password):
+                violations.append("OpenSearch production authentication must be configured")
+
+            if _is_placeholder_secret(self.jina_api_key):
+                violations.append("JINA_API_KEY must be a non-placeholder secret")
+
+            if self.service_role == "api":
+                if not self.api_auth_enabled:
+                    violations.append("API_AUTH_ENABLED must be true")
+                api_key_values = [secret.get_secret_value() for secret in self.api_keys]
+                if not api_key_values:
+                    violations.append("API_KEYS must contain at least one key")
+                elif any(
+                    len(value) < 24 or "changeme" in value.lower() for value in api_key_values
+                ):
+                    violations.append("API_KEYS must not contain short or placeholder keys")
+                if not self.api_rate_limit_enabled:
+                    violations.append("API_RATE_LIMIT_ENABLED must be true")
+
+                if not self.redis.ssl or self.redis.ssl_cert_reqs != "required":
+                    violations.append("Redis TLS with certificate verification is required")
+                if _is_placeholder_secret(self.redis.password):
+                    violations.append("REDIS__PASSWORD must be a non-placeholder secret")
+
+                if self.llm_provider == "openai":
+                    if not self.openai_base_url.startswith("https://"):
+                        violations.append("OPENAI_BASE_URL must use HTTPS")
+                    if _is_placeholder_secret(self.openai_api_key.get_secret_value()):
+                        violations.append("OPENAI_API_KEY must be a non-placeholder secret")
+                elif not self.ollama_host.startswith("https://"):
+                    violations.append("OLLAMA_HOST must use HTTPS in production")
+
+                if self.langfuse.enabled:
+                    if not self.langfuse.base_url.startswith("https://"):
+                        violations.append("LANGFUSE_BASE_URL must use HTTPS")
+                    if not self.langfuse.public_key or _is_placeholder_secret(
+                        self.langfuse.secret_key
+                    ):
+                        violations.append("Langfuse production credentials must be configured")
+                if self.langfuse.capture_content and not self.allow_production_content_capture:
+                    violations.append(
+                        "LANGFUSE_CAPTURE_CONTENT requires ALLOW_PRODUCTION_CONTENT_CAPTURE=true"
+                    )
+                if self.telegram.enabled and _is_placeholder_secret(self.telegram.bot_token):
+                    violations.append("TELEGRAM__BOT_TOKEN must be a non-placeholder secret")
             if violations:
                 raise ValueError("Unsafe production configuration: " + "; ".join(violations))
         return self

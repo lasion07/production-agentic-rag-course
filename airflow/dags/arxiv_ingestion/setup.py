@@ -1,6 +1,7 @@
 import logging
 
 from sqlalchemy import text
+from src.config import get_settings
 
 from .common import get_cached_services
 
@@ -30,16 +31,27 @@ def setup_environment():
         except Exception as e:
             raise Exception(f"OpenSearch hybrid client connection failed: {e}")
 
-        setup_results = opensearch_client.setup_indices(force=False)
-        if setup_results.get("hybrid_index"):
-            logger.info("Hybrid search index created with vector support")
-        else:
-            logger.info("Hybrid search index already exists")
+        settings = get_settings()
+        if settings.opensearch_schema_management_enabled:
+            setup_results = opensearch_client.setup_indices(force=False)
+            if setup_results.get("hybrid_index"):
+                logger.info("Hybrid search index created with vector support")
+            else:
+                logger.info("Hybrid search index already exists")
 
-        if setup_results.get("rrf_pipeline"):
-            logger.info("RRF pipeline created successfully")
+            if setup_results.get("rrf_pipeline"):
+                logger.info("RRF pipeline created successfully")
+            else:
+                logger.info("RRF pipeline already exists")
         else:
-            logger.info("RRF pipeline already exists")
+            index_exists = opensearch_client.client.indices.exists(
+                index=opensearch_client.index_name
+            )
+            if not index_exists:
+                raise RuntimeError(
+                    f"Required OpenSearch index '{opensearch_client.index_name}' is not provisioned"
+                )
+            logger.info("OpenSearch schema is pre-provisioned; auto-setup disabled")
 
         logger.info("Hybrid search setup completed")
 

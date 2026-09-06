@@ -151,6 +151,8 @@ CLAUDE.md
 
 # Docker
 .dockerignore
+deploy/secrets/*
+!deploy/secrets/README.md
 
 # Airflow runtime files (generated in airflow/ folder)
 airflow/logs/

@@ -1,3 +1,6 @@
+# DEVELOPMENT ONLY: convenient local learning stack with published backend
+# ports and intentionally weak credentials. Never deploy this file publicly;
+# use compose.production.yml and docs/production-deployment.md instead.
 services:
   # API service
   api:

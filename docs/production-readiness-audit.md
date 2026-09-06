@@ -63,6 +63,15 @@ An internet-facing deployment permits unbounded paid-model usage, forged feedbac
 
 ### PR-P0-02 — Create a production-safe deployment boundary
 
+**Implementation status: Complete as a deployable template (2026-09-06).** `compose.yml` is explicitly
+development-only. `compose.production.yml` publishes only a Caddy TLS gateway; API and optional Airflow
+scheduler run non-root with read-only filesystems, dropped capabilities, resource/PID limits, restart and
+termination policies. Managed/private PostgreSQL, Redis, OpenSearch and Langfuse connections require
+authentication plus verified TLS. Secrets use file mounts and allowlisted entrypoints. Production startup
+rejects insecure URLs, placeholder credentials and unapproved content capture. Full regression: **201 passed**;
+both Dockerfiles and the production Compose model validate without warnings. Actual deployment still requires
+operator-provisioned private dependencies, CA chains, secret files, DNS and an immutable image registry.
+
 **Evidence**
 
 - Compose publishes PostgreSQL, Redis, OpenSearch, Dashboards, Airflow, and observability stores to the host in `compose.yml`.
@@ -226,7 +235,7 @@ Resolve the 18 current Pydantic/SQLAlchemy/LangGraph warnings and replace `mypy.
 
 ## Recommended execution order
 
-1. **Production perimeter:** PR-P0-01 complete; finish the remaining deployment boundary in PR-P0-02.
+1. **Production perimeter:** PR-P0-01 and PR-P0-02 complete.
 2. **Data correctness:** PR-P0-03.
 3. **Controlled lifecycle:** PR-P0-04 and PR-P0-05.
 4. **Release safety:** PR-P0-06.

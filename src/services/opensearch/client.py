@@ -20,11 +20,21 @@ class OpenSearchClient:
         self.settings = settings
         self.index_name = f"{settings.opensearch.index_name}-{settings.opensearch.chunk_index_suffix}"
 
+        opensearch_settings = settings.opensearch
+        client_options: Dict[str, Any] = {
+            "hosts": [host],
+            "use_ssl": host.startswith("https://"),
+            "verify_certs": opensearch_settings.verify_certs,
+            "ssl_show_warn": opensearch_settings.verify_certs,
+        }
+        password = opensearch_settings.password.get_secret_value()
+        if opensearch_settings.username and password:
+            client_options["http_auth"] = (opensearch_settings.username, password)
+        if opensearch_settings.ca_certs:
+            client_options["ca_certs"] = opensearch_settings.ca_certs
+
         self.client = OpenSearch(
-            hosts=[host],
-            use_ssl=False,
-            verify_certs=False,
-            ssl_show_warn=False,
+            **client_options,
         )
 
         logger.info(f"OpenSearch client initialized with host: {host}")

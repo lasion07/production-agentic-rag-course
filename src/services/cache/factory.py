@@ -22,6 +22,9 @@ def make_redis_client(settings: Settings) -> redis.Redis:
             socket_connect_timeout=redis_settings.socket_connect_timeout,
             retry_on_timeout=True,
             retry_on_error=[redis.ConnectionError, redis.TimeoutError],
+            ssl=redis_settings.ssl,
+            ssl_ca_certs=redis_settings.ssl_ca_certs,
+            ssl_cert_reqs=redis_settings.ssl_cert_reqs if redis_settings.ssl else None,
         )
 
         # Test connection

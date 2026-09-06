@@ -51,12 +51,16 @@ async def lifespan(app: FastAPI):
     if opensearch_client.health_check():
         logger.info("OpenSearch connected successfully")
 
-        # Setup hybrid index (supports all search types)
-        setup_results = opensearch_client.setup_indices(force=False)
-        if setup_results.get("hybrid_index"):
-            logger.info("Hybrid index created")
+        if settings.opensearch_schema_management_enabled:
+            # Development convenience only. Production schema changes belong to
+            # an explicit release/migration job.
+            setup_results = opensearch_client.setup_indices(force=False)
+            if setup_results.get("hybrid_index"):
+                logger.info("Hybrid index created")
+            else:
+                logger.info("Hybrid index already exists")
         else:
-            logger.info("Hybrid index already exists")
+            logger.info("OpenSearch schema auto-setup disabled")
 
         # Get simple statistics
         try:

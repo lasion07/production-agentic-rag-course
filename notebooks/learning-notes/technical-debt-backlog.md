@@ -166,4 +166,4 @@ Production readiness audit: [docs/production-readiness-audit.md](../../docs/prod
 - Đã giảm rủi ro nhưng còn việc: TD-W7-09, 11.
 - Chưa triển khai: TD-W7-01.
 - Cần mở rộng evaluation coverage: TD-W7-20.
-- Launch blockers tổng thể: `PR-P0-01` đã hoàn thành; tiếp tục `PR-P0-02` đến `PR-P0-06` trong production readiness audit.
+- Launch blockers tổng thể: `PR-P0-01` và `PR-P0-02` đã hoàn thành; tiếp tục `PR-P0-03` đến `PR-P0-06` trong production readiness audit.

@@ -6,7 +6,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
 from src.api_errors import register_exception_handlers
-from src.config import Settings
+from src.config import LangfuseSettings, OpenSearchSettings, RedisSettings, Settings, TelegramSettings
 from src.middlewares import RequestContextMiddleware
 from src.security import APIIdentityDep, record_trace_owner, verify_trace_owner
 
@@ -86,10 +86,40 @@ def test_production_accepts_explicit_safe_perimeter_configuration():
         _env_file=None,
         environment="production",
         debug=False,
+        opensearch_schema_management_enabled=False,
         api_auth_enabled=True,
         api_keys=["production-key-with-at-least-32-characters"],
         api_rate_limit_enabled=True,
-        allow_production_content_capture=True,
+        postgres_database_url=(
+            "postgresql+psycopg2://rag_prod:D7m9K2q8N4v6X1z3@db.internal/rag"
+            "?sslmode=verify-full"
+        ),
+        llm_provider="openai",
+        openai_api_key="sk-production-value-with-sufficient-entropy",
+        jina_api_key="jina-production-value-with-sufficient-entropy",
+        opensearch=OpenSearchSettings(
+            _env_file=None,
+            host="https://search.internal:9200",
+            username="rag_service",
+            password="Os9xK4v2N7m5Q8z1",
+            verify_certs=True,
+        ),
+        redis=RedisSettings(
+            _env_file=None,
+            host="redis.internal",
+            password="Rd8kP3m7X2v9N5q1",
+            ssl=True,
+            ssl_cert_reqs="required",
+        ),
+        langfuse=LangfuseSettings(
+            _env_file=None,
+            enabled=True,
+            base_url="https://us.cloud.langfuse.com",
+            public_key="pk-production",
+            secret_key="lf9K2m7X4v8N1q5Z",
+            capture_content=False,
+        ),
+        telegram=TelegramSettings(_env_file=None),
     )
 
     assert settings.environment == "production"
