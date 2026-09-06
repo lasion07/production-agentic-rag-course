@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.runtime import Runtime
 from src.services.agents.models import GradeDocuments, GuardrailScoring
@@ -248,6 +249,44 @@ class TestGenerateAnswerNode:
         )
 
         assert result["messages"][0].content == "grounded answer"
+
+    @pytest.mark.asyncio
+    async def test_generate_answer_rejects_citation_outside_evidence_allowlist(
+        self,
+        test_context,
+        sample_human_message,
+        sample_tool_message,
+    ):
+        mock_llm = Mock()
+        mock_llm.ainvoke = AsyncMock(
+            return_value=Mock(content="Unsupported claim [arXiv:2508.99999].")
+        )
+        test_context.llm_client.get_langchain_model = Mock(return_value=mock_llm)
+        runtime = Mock(spec=Runtime)
+        runtime.context = test_context
+
+        result = await ainvoke_generate_answer_step(
+            {
+                "messages": [sample_human_message, sample_tool_message],
+                "retrieval_attempts": 1,
+                "relevant_documents": [
+                    Document(
+                        page_content="Transformers use self-attention.",
+                        metadata={
+                            "arxiv_id": "1706.03762v7",
+                            "title": "Attention Is All You Need",
+                            "section": "Abstract",
+                        },
+                    )
+                ],
+                "relevant_sources": [],
+            },
+            runtime,
+        )
+
+        assert result["business_status"] == "insufficient_evidence"
+        assert result["terminal_route"] == "insufficient_evidence"
+        assert "passed evidence and citation validation" in result["messages"][0].content
 
 
 class TestOutOfScopeNode:

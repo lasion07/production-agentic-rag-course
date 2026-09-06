@@ -179,7 +179,9 @@ class FakeModel:
         return StructuredModel(schema)
 
     async def ainvoke(self, _prompt: str) -> AIMessage:
-        return AIMessage(content="Grounded answer citing Attention Is All You Need.")
+        return AIMessage(
+            content="Grounded answer citing Attention Is All You Need [arXiv:1706.03762]."
+        )
 
 
 class FakeOllama:

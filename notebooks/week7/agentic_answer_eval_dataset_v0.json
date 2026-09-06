@@ -1,5 +1,6 @@
 [
   {
+    "id": "W7A-01",
     "input": {
       "query": "What repair success range does the diffusion code-repair paper report, and how is the repair performed?",
       "top_k": 3,
@@ -9,12 +10,154 @@
       "http_status": 200,
       "business_status": "success",
       "required_answer_fragments": ["56.4", "68.2"],
-      "required_source_fragments": ["2508.11110"]
+      "required_answer_any_groups": [["noise", "noising"], ["denois", "diffusion process"]],
+      "required_source_fragments": ["2508.11110"],
+      "required_citation_ids": ["2508.11110"]
     },
     "metadata": {
       "case_id": "W7A-01",
       "case_type": "quantitative_claim_grounding",
-      "evaluation_layer": "answer_contract"
+      "evaluation_layer": "answer_contract",
+      "evidence_arxiv_ids": ["2508.11110v1"],
+      "review_status": "needs_human_review"
+    }
+  },
+  {
+    "id": "W7A-02",
+    "input": {
+      "query": "According to the diffusion code-repair paper, how does synthetic data differ from real code and how much does it improve fine-tuning performance?",
+      "top_k": 4,
+      "use_hybrid": true
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "required_answer_fragments": ["2.5", "3.5"],
+      "required_answer_any_groups": [["divers", "variety"], ["complex", "complexity"]],
+      "required_source_fragments": ["2508.11110"],
+      "required_citation_ids": ["2508.11110"]
+    },
+    "metadata": {
+      "case_id": "W7A-02",
+      "case_type": "quantitative_and_qualitative_grounding",
+      "evaluation_layer": "answer_contract",
+      "evidence_arxiv_ids": ["2508.11110v1"],
+      "review_status": "needs_human_review"
+    }
+  },
+  {
+    "id": "W7A-03",
+    "input": {
+      "query": "Which optimization algorithms are presented for Piecewise-Affine Regularization?",
+      "top_k": 4,
+      "use_hybrid": true
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "required_answer_fragments": ["proximal gradient", "ADMM"],
+      "required_answer_any_groups": [["accelerated", "acceleration"]],
+      "required_source_fragments": ["2508.11112"],
+      "required_citation_ids": ["2508.11112"]
+    },
+    "metadata": {
+      "case_id": "W7A-03",
+      "case_type": "enumeration_grounding",
+      "evaluation_layer": "answer_contract",
+      "evidence_arxiv_ids": ["2508.11112v1"],
+      "review_status": "needs_human_review"
+    }
+  },
+  {
+    "id": "W7A-04",
+    "input": {
+      "query": "What does the Piecewise-Affine Regularization paper claim about critical points and quantization in the overparameterized regime?",
+      "top_k": 4,
+      "use_hybrid": true
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "required_answer_fragments": ["critical point", "quantiz"],
+      "required_answer_any_groups": [["parameter", "dimension"], ["sample", "data"]],
+      "required_source_fragments": ["2508.11112"],
+      "required_citation_ids": ["2508.11112"]
+    },
+    "metadata": {
+      "case_id": "W7A-04",
+      "case_type": "theoretical_claim_grounding",
+      "evaluation_layer": "answer_contract",
+      "evidence_arxiv_ids": ["2508.11112v1"],
+      "review_status": "needs_human_review"
+    }
+  },
+  {
+    "id": "W7A-05",
+    "input": {
+      "query": "How large is the TaFo workbook corpus, and by what range does TaFo outperform prior methods?",
+      "top_k": 4,
+      "use_hybrid": true
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "required_answer_fragments": ["1.8", "15.6", "26.5"],
+      "required_answer_any_groups": [["million", "1,800,000"]],
+      "required_source_fragments": ["2508.11121"],
+      "required_citation_ids": ["2508.11121"]
+    },
+    "metadata": {
+      "case_id": "W7A-05",
+      "case_type": "multi_numeric_claim_grounding",
+      "evaluation_layer": "answer_contract",
+      "evidence_arxiv_ids": ["2508.11121v1"],
+      "review_status": "needs_human_review"
+    }
+  },
+  {
+    "id": "W7A-06",
+    "input": {
+      "query": "How does TaFo predict spreadsheet formatting without requiring formatted examples or natural-language instructions from the user?",
+      "top_k": 4,
+      "use_hybrid": true
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "required_answer_fragments": ["format"],
+      "required_answer_any_groups": [["neuro-symbolic", "neurosymbolic"], ["trigger", "rule"], ["visual", "appearance"], ["without", "does not require"]],
+      "required_source_fragments": ["2508.11121"],
+      "required_citation_ids": ["2508.11121"]
+    },
+    "metadata": {
+      "case_id": "W7A-06",
+      "case_type": "mechanism_grounding",
+      "evaluation_layer": "answer_contract",
+      "evidence_arxiv_ids": ["2508.11121v1"],
+      "review_status": "needs_human_review"
+    }
+  },
+  {
+    "id": "W7A-07",
+    "input": {
+      "query": "Compare the diffusion code-repair paper's reported repair success range with TaFo's reported performance-improvement range over prior methods. Identify which range belongs to which paper.",
+      "top_k": 6,
+      "use_hybrid": true
+    },
+    "expectedOutput": {
+      "http_status": 200,
+      "business_status": "success",
+      "required_answer_fragments": ["56.4", "68.2", "15.6", "26.5"],
+      "required_answer_any_groups": [["diffusion", "code-repair"], ["TaFo", "Tabularis Formatus"]],
+      "required_source_fragments": ["2508.11110", "2508.11121"],
+      "required_citation_ids": ["2508.11110", "2508.11121"]
+    },
+    "metadata": {
+      "case_id": "W7A-07",
+      "case_type": "cross_document_attribution",
+      "evaluation_layer": "answer_contract",
+      "evidence_arxiv_ids": ["2508.11110v1", "2508.11121v1"],
+      "review_status": "needs_human_review"
     }
   }
 ]

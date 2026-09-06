@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage
 from langgraph.runtime import Runtime
 
 from ..context import Context
+from ..grounding import allowed_citation_ids, format_evidence_context, validate_grounded_answer
 from ..prompts import GENERATE_ANSWER_PROMPT
 from ..state import AgentState
 from .utils import get_latest_context, get_latest_query
@@ -33,6 +34,10 @@ async def ainvoke_generate_answer_step(
     # Get question and context
     question = get_latest_query(state["messages"])
     context = get_latest_context(state["messages"])
+    relevant_documents = state.get("relevant_documents", [])
+    if relevant_documents:
+        context = format_evidence_context(relevant_documents)
+    citation_allowlist = allowed_citation_ids(relevant_documents)
 
     # Count sources from relevant_sources
     sources_count = len(state.get("relevant_sources", []))
@@ -118,6 +123,20 @@ async def ainvoke_generate_answer_step(
             answer = str(content)
         logger.info(f"Generated answer of length: {len(answer)} characters")
 
+        grounding = validate_grounded_answer(answer, relevant_documents)
+        if not grounding.valid:
+            logger.warning(
+                "Grounding validation failed: invalid_citations=%s unsupported_numeric_claims=%s missing_citation=%s",
+                grounding.invalid_citations,
+                grounding.unsupported_numeric_claims,
+                grounding.missing_citation,
+            )
+            answer = (
+                "I could not produce an answer that passed evidence and citation validation. "
+                "Please retry or narrow the question."
+            )
+            grounding_failed = True
+
         # Update span with successful result
         if span:
             execution_time = (time.time() - start_time) * 1000
@@ -126,10 +145,15 @@ async def ainvoke_generate_answer_step(
                 output={
                     "answer_length": len(answer),
                     "sources_used": sources_count,
+                    "grounding_valid": grounding.valid,
+                    "citations": list(grounding.citations),
+                    "invalid_citations": list(grounding.invalid_citations),
+                    "unsupported_numeric_claims": list(grounding.unsupported_numeric_claims),
                 },
                 metadata={
                     "execution_time_ms": execution_time,
                     "context_length": len(context),
+                    "citation_allowlist": list(citation_allowlist),
                 },
             )
 
@@ -138,7 +162,11 @@ async def ainvoke_generate_answer_step(
 
         # Fallback to error message if LLM fails
         if isinstance(e, TimeoutError) and context:
-            answer = f"Generation exceeded its time budget. Here is the most relevant retrieved evidence:\n\n{context[:1500]}"
+            citations = " ".join(f"[arXiv:{arxiv_id}]" for arxiv_id in citation_allowlist)
+            answer = (
+                "Generation exceeded its time budget. Here is the most relevant retrieved evidence:"
+                f"\n\n{context[:1500]}\n\n{citations}"
+            )
         else:
             answer = (
                 f"I apologize, but I encountered an error while generating the answer: {str(e)}\n\n"
@@ -160,9 +188,13 @@ async def ainvoke_generate_answer_step(
     business_status = state.get("business_status") or "success"
     if "generation_failed" in locals() and business_status == "success":
         business_status = "degraded"
+    terminal_route = "generate_answer"
+    if "grounding_failed" in locals():
+        business_status = "insufficient_evidence"
+        terminal_route = "insufficient_evidence"
 
     return {
         "messages": [AIMessage(content=answer)],
         "business_status": business_status,
-        "terminal_route": "generate_answer",
+        "terminal_route": terminal_route,
     }
