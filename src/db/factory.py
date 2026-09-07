@@ -4,7 +4,7 @@ from src.db.interfaces.postgresql import PostgreSQLDatabase
 from src.schemas.database.config import PostgreSQLSettings
 
 
-def make_database() -> BaseDatabase:
+def make_database(*, validate_connection: bool = True) -> BaseDatabase:
     """Factory function to create a database instance.
 
     :returns: An instance of the database
@@ -22,5 +22,5 @@ def make_database() -> BaseDatabase:
     )
 
     database = PostgreSQLDatabase(config=config)
-    database.startup()
+    database.startup(validate_connection=validate_connection)
     return database

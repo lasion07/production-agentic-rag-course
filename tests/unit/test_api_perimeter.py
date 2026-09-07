@@ -265,3 +265,10 @@ def test_only_liveness_route_is_public_in_openapi_contract():
     ):
         assert paths[path][method]["security"] == [{"APIKeyHeader": []}]
         assert paths[path][method]["responses"]["429"]["content"]["application/json"]["schema"]
+
+
+def test_readiness_route_remains_protected():
+    from src.main import app
+
+    operation = app.openapi()["paths"]["/api/v1/ready"]["get"]
+    assert operation["security"] == [{"APIKeyHeader": []}]

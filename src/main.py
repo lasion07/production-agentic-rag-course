@@ -1,6 +1,9 @@
 import logging
 import os
+from collections.abc import Callable
 from contextlib import asynccontextmanager
+from inspect import isawaitable
+from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI
@@ -12,13 +15,11 @@ from src.routers import agentic_ask, hybrid_search, live, ping
 from src.routers.ask import ask_router, stream_router
 from src.security import enforce_api_access
 from src.services.agents.factory import make_agentic_rag_service
-from src.services.arxiv.factory import make_arxiv_client
 from src.services.cache.factory import make_cache_client
 from src.services.embeddings.factory import make_embeddings_service
 from src.services.langfuse.factory import make_langfuse_tracer
 from src.services.llm.factory import make_llm_client
 from src.services.opensearch.factory import make_opensearch_client
-from src.services.pdf_parser.factory import make_pdf_parser_service
 from src.services.telegram.factory import make_telegram_service
 
 # Setup logging
@@ -27,6 +28,17 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+async def _close_service(name: str, close: Callable[[], Any]) -> None:
+    """Run one cleanup action without preventing the remaining cleanup actions."""
+    try:
+        result = close()
+        if isawaitable(result):
+            await result
+        logger.info("%s stopped", name)
+    except Exception:
+        logger.exception("Failed to close %s", name)
 
 
 @asynccontextmanager
@@ -39,32 +51,20 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.settings = settings
 
-    database = make_database()
+    # Construct pools and clients without making process liveness depend on
+    # remote services. /ready owns bounded dependency validation.
+    database = make_database(validate_connection=False)
     app.state.database = database
-    logger.info("Database connected")
+    logger.info("Database pool configured")
 
     # Initialize search service
     opensearch_client = make_opensearch_client()
     app.state.opensearch_client = opensearch_client
 
-    # Verify OpenSearch connectivity and create index if needed
-    if opensearch_client.health_check():
-        logger.info("OpenSearch connected successfully")
+    logger.info("OpenSearch schema is managed by an explicit migration job")
 
-        logger.info("OpenSearch schema is managed by an explicit migration job")
-
-        # Get simple statistics
-        try:
-            stats = opensearch_client.client.count(index=opensearch_client.index_name)
-            logger.info(f"OpenSearch ready: {stats['count']} documents indexed")
-        except Exception:
-            logger.info("OpenSearch index ready (stats unavailable)")
-    else:
-        logger.warning("OpenSearch connection failed - search features will be limited")
-
-    # Initialize other services (kept for future endpoints and notebook demos)
-    app.state.arxiv_client = make_arxiv_client()
-    app.state.pdf_parser = make_pdf_parser_service()
+    # Initialize serving-only services. Ingestion dependencies such as Docling
+    # and arXiv belong to Airflow and must not delay or destabilize API startup.
     app.state.embeddings_service = make_embeddings_service()
     app.state.llm_client = make_llm_client()
     app.state.langfuse_tracer = make_langfuse_tracer()
@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
         app.state.agentic_rag_error = f"{type(exc).__name__}: {str(exc)[:300]}"
         logger.exception("Agentic RAG service failed readiness construction")
     logger.info(
-        "Services initialized: arXiv API client, PDF parser, OpenSearch, Embeddings, "
+        "Services initialized: OpenSearch, Embeddings, "
         "LLM provider=%s model=%s, Langfuse, Cache",
         app.state.llm_client.provider_name,
         app.state.llm_client.default_model,
@@ -112,17 +112,26 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Telegram bot not configured - skipping initialization")
 
-    logger.info("API ready")
-    yield
+    logger.info("API process started; use /ready for dependency readiness")
+    try:
+        yield
+    finally:
+        if getattr(app.state, "telegram_service", None):
+            await _close_service("Telegram bot", app.state.telegram_service.stop)
+        await _close_service("Embeddings client", app.state.embeddings_service.close)
 
-    # Cleanup
-    if hasattr(app.state, "telegram_service") and app.state.telegram_service:
-        await app.state.telegram_service.stop()
-        logger.info("Telegram bot stopped")
+        llm_close = getattr(app.state.llm_client, "close", None)
+        if llm_close:
+            await _close_service("LLM client", llm_close)
 
-    app.state.langfuse_tracer.shutdown()
-    database.teardown()
-    logger.info("API shutdown complete")
+        cache_client = getattr(app.state, "cache_client", None)
+        if cache_client is not None:
+            await _close_service("Redis cache", cache_client.close)
+
+        await _close_service("OpenSearch client", app.state.opensearch_client.close)
+        await _close_service("Langfuse tracer", app.state.langfuse_tracer.shutdown)
+        await _close_service("PostgreSQL pool", database.teardown)
+        logger.info("API shutdown complete")
 
 
 _bootstrap_settings = get_settings()

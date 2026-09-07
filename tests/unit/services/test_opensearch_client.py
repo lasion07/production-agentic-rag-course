@@ -100,3 +100,12 @@ def test_rrf_pipeline_setup_is_idempotent_on_search_pipeline_endpoint():
         "GET",
         "/_search/pipeline/hybrid-rrf-pipeline",
     )
+
+
+def test_close_releases_opensearch_transport():
+    client = object.__new__(OpenSearchClient)
+    client.client = Mock()
+
+    client.close()
+
+    client.client.close.assert_called_once()

@@ -181,8 +181,8 @@ class RedisSettings(BaseConfigSettings):
     ssl_cert_reqs: Literal["required", "optional", "none"] = "required"
     db: int = 0
     decode_responses: bool = True
-    socket_timeout: int = 30
-    socket_connect_timeout: int = 30
+    socket_timeout: float = Field(1.0, gt=0.0, le=5.0)
+    socket_connect_timeout: float = Field(1.0, gt=0.0, le=5.0)
 
     # Cache settings
     ttl_hours: int = 6  # Cache TTL in hours
@@ -218,6 +218,7 @@ class Settings(BaseConfigSettings):
     api_global_rate_limit_requests: int = Field(600, ge=1, le=1000000)
     api_rate_limit_window_seconds: int = Field(60, ge=1, le=86400)
     api_security_redis_timeout_seconds: float = Field(0.25, gt=0.0, le=5.0)
+    health_check_timeout_seconds: float = Field(2.0, gt=0.0, le=10.0)
     feedback_ownership_ttl_seconds: int = Field(86400, ge=60, le=2592000)
     trust_incoming_request_id: bool = False
     allow_production_content_capture: bool = False

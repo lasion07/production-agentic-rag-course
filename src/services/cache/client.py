@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -45,7 +46,7 @@ class CacheClient:
             cache_key = self._generate_cache_key(request)
 
             # Simple Redis GET operation - O(1)
-            cached_response = self.redis.get(cache_key)
+            cached_response = await asyncio.to_thread(self.redis.get, cache_key)
 
             if cached_response:
                 try:
@@ -68,7 +69,12 @@ class CacheClient:
             cache_key = self._generate_cache_key(request)
 
             # Simple Redis SET operation with TTL
-            success = self.redis.set(cache_key, response.model_dump_json(), ex=self.ttl)
+            success = await asyncio.to_thread(
+                self.redis.set,
+                cache_key,
+                response.model_dump_json(),
+                ex=self.ttl,
+            )
 
             if success:
                 logger.info(f"Stored response in exact cache with key {cache_key[:16]}...")
@@ -80,3 +86,11 @@ class CacheClient:
         except Exception as e:
             logger.error(f"Error storing in cache: {e}")
             return False
+
+    async def health_check(self) -> bool:
+        """Check Redis without blocking the event loop."""
+        return bool(await asyncio.to_thread(self.redis.ping))
+
+    async def close(self) -> None:
+        """Close the Redis connection pool without blocking the event loop."""
+        await asyncio.to_thread(self.redis.close)

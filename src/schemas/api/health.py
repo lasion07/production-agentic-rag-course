@@ -8,6 +8,8 @@ class ServiceStatus(BaseModel):
 
     status: str = Field(..., description="Service status", example="healthy")
     message: Optional[str] = Field(None, description="Status message", example="Connected successfully")
+    required: bool = Field(False, description="Whether failure removes this instance from readiness")
+    latency_ms: float = Field(0.0, ge=0.0, description="Bounded probe latency in milliseconds")
 
 
 class HealthResponse(BaseModel):

@@ -162,7 +162,9 @@ Schema changes cannot be reviewed, rolled forward/back safely, or reproduced con
 
 ### PR-P0-05 — Separate liveness, readiness, and dependency health
 
-**Evidence**
+**Status: implemented and runtime-verified.**
+
+**Previous evidence**
 
 - One `/health` endpoint performs database, OpenSearch, and hosted LLM checks at `src/routers/ping.py:10`.
 - The endpoint always returns a normal response model, so a degraded payload still produces HTTP 200.
@@ -183,6 +185,22 @@ Orchestrators cannot distinguish “process alive” from “ready to serve.” 
 - Redis remains optional and fail-open with a short connection timeout.
 - Move schema/index setup out of API startup.
 - Close every network client during lifespan shutdown; verify with lifecycle tests.
+
+**Implemented evidence**
+
+- Public `/live` checks only the event loop. Protected `/ready` probes required serving dependencies
+  concurrently with a configurable two-second ceiling and returns HTTP 503 when any required probe fails.
+- Protected `/health` exposes component state without turning optional degradation into an orchestrator restart.
+- Redis construction is lazy and uses one-second connect/read timeouts. Cache failures are fail-open, while Redis
+  becomes a required readiness dependency when Redis-backed API rate limiting is enabled.
+- API startup no longer performs PostgreSQL connectivity or OpenSearch schema/index mutations; migration remains
+  an explicit release job.
+- Lifespan cleanup closes embeddings, LLM, Redis, OpenSearch, Langfuse, Telegram and PostgreSQL clients independently.
+- Unit coverage verifies readiness status, bounded timeout, Redis dual semantics and client lifecycle cleanup.
+- Docker smoke: `/live` returned 200, `/ready` returned 200 with all required dependencies healthy, and detailed
+  `/health` returned 200. With Redis intentionally stopped in cache-only development mode, `/ready` remained 200
+  while `/health` became `degraded`; Redis was then restored healthy. A restart drill logged successful shutdown of
+  Telegram, embeddings, OpenAI, Redis, OpenSearch, Langfuse and PostgreSQL clients before the new process started.
 
 ### PR-P0-06 — Establish an automated release gate
 

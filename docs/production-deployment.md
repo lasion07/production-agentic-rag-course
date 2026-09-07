@@ -76,7 +76,8 @@ characters. CA files must contain the issuing PEM chain rather than a server cer
 
    `docker compose --profile ingestion --env-file /secure/production.env -f compose.production.yml up -d airflow-scheduler`
 
-10. Verify HTTPS `/api/v1/live`, then call protected `/api/v1/health` with a production API key.
+10. Verify public HTTPS `/api/v1/live`, then call protected `/api/v1/ready` and `/api/v1/health` with a
+    production API key. Route traffic only when `/ready` returns HTTP 200; use `/health` for dependency diagnosis.
 
 For a new empty development environment, `compose.yml` runs `search-migrate ... bootstrap` as an explicit
 one-off dependency before API/Airflow startup. Neither application process creates mappings, aliases or

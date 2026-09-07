@@ -148,6 +148,17 @@ async def test_health_check_reports_provider_and_model():
 
 
 @pytest.mark.asyncio
+async def test_close_releases_async_openai_transport():
+    with patch("src.services.llm.openai_client.AsyncOpenAI") as constructor:
+        client = OpenAIClient(settings())
+        constructor.return_value.close = AsyncMock()
+
+        await client.close()
+
+    constructor.return_value.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_rag_answer_preserves_sources_and_usage():
     with patch("src.services.llm.openai_client.AsyncOpenAI") as sdk:
         sdk.return_value.responses.create = AsyncMock(return_value=response("grounded answer"))

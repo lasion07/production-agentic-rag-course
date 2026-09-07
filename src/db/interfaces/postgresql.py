@@ -23,8 +23,8 @@ class PostgreSQLDatabase(BaseDatabase):
         self.engine: Optional[Engine] = None
         self.session_factory: Optional[sessionmaker] = None
 
-    def startup(self) -> None:
-        """Initialize the database connection."""
+    def startup(self, *, validate_connection: bool = True) -> None:
+        """Initialize the pool and optionally fail fast on connectivity."""
         try:
             # Log connection attempt
             logger.info(
@@ -41,11 +41,11 @@ class PostgreSQLDatabase(BaseDatabase):
 
             self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
 
-            # Test the connection
-            assert self.engine is not None
-            with self.engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-                logger.info("Database connection test successful")
+            if validate_connection:
+                assert self.engine is not None
+                with self.engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                    logger.info("Database connection test successful")
 
             logger.info("PostgreSQL database initialized successfully")
             assert self.engine is not None

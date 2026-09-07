@@ -158,7 +158,8 @@ Production readiness audit: [docs/production-readiness-audit.md](../../docs/prod
 - Source: API image chứa Docling/PyTorch cho parsing.
 - Ảnh hưởng: build/export chậm và footprint lớn; không làm API tiêu tốn RAM cho Ollama inference.
 - Hướng sửa: tách ingestion/parser worker khỏi serving image.
-- Trạng thái: **Backlog**.
+- Trạng thái: **Giảm rủi ro** — serving process không còn import/construct Docling, nhưng image vẫn dùng chung
+  dependency set với ingestion và cần tách image ở một PR tối ưu riêng.
 
 ## Trạng thái
 
@@ -166,4 +167,4 @@ Production readiness audit: [docs/production-readiness-audit.md](../../docs/prod
 - Đã giảm rủi ro nhưng còn việc: TD-W7-09, 11.
 - Chưa triển khai: TD-W7-01.
 - Cần mở rộng evaluation coverage: TD-W7-20.
-- Launch blockers tổng thể: `PR-P0-01` đến `PR-P0-04` đã hoàn thành; tiếp theo là PR-P0-05 và PR-P0-06.
+- Launch blockers tổng thể: `PR-P0-01` đến `PR-P0-05` đã triển khai; tiếp theo là PR-P0-06.

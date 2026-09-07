@@ -36,8 +36,6 @@ async def client():
     with (
         patch("src.main.make_database", return_value=database),
         patch("src.main.make_opensearch_client", return_value=opensearch),
-        patch("src.main.make_arxiv_client", return_value=AsyncMock()),
-        patch("src.main.make_pdf_parser_service", return_value=AsyncMock()),
         patch("src.main.make_embeddings_service", return_value=AsyncMock()),
         patch("src.main.make_llm_client", return_value=llm),
         patch("src.main.make_langfuse_tracer", return_value=langfuse),

@@ -8,8 +8,8 @@ class BaseDatabase(ABC):
     """Base class for database operations."""
 
     @abstractmethod
-    def startup(self) -> None:
-        """Initialize the database connection."""
+    def startup(self, *, validate_connection: bool = True) -> None:
+        """Initialize resources and optionally validate connectivity."""
 
     @abstractmethod
     def teardown(self) -> None:

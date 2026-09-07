@@ -92,6 +92,10 @@ class OpenAIClient:
         except Exception as exc:
             raise self._translate_error(exc, "OpenAI health check failed") from exc
 
+    async def close(self) -> None:
+        """Close the hosted provider's persistent HTTP transport."""
+        await self.client.close()
+
     async def generate(
         self,
         model: Optional[str],

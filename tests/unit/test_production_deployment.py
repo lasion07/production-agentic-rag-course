@@ -181,8 +181,6 @@ async def test_production_api_startup_does_not_mutate_opensearch_schema():
         patch("src.main.get_settings", return_value=settings),
         patch("src.main.make_database", return_value=database),
         patch("src.main.make_opensearch_client", return_value=opensearch),
-        patch("src.main.make_arxiv_client", return_value=MagicMock()),
-        patch("src.main.make_pdf_parser_service", return_value=MagicMock()),
         patch("src.main.make_embeddings_service", return_value=MagicMock()),
         patch("src.main.make_llm_client", return_value=llm),
         patch("src.main.make_langfuse_tracer", return_value=tracer),

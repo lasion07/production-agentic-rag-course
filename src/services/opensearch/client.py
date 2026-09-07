@@ -63,6 +63,10 @@ class OpenSearchClient:
             logger.error(f"Health check failed: {e}")
             return False
 
+    def close(self) -> None:
+        """Close the OpenSearch transport and its pooled connections."""
+        self.client.close()
+
     def get_index_stats(self) -> Dict[str, Any]:
         """Get statistics for the hybrid index."""
         try:

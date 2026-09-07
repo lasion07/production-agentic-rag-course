@@ -25,6 +25,20 @@ def test_database_startup_checks_connectivity_without_mutating_schema():
     create_all.assert_not_called()
 
 
+def test_database_startup_can_defer_connectivity_to_readiness():
+    engine = MagicMock()
+    engine.url.database = "rag_db"
+    database = PostgreSQLDatabase(
+        PostgreSQLSettings(database_url="postgresql://user:password@db/rag_db")
+    )
+
+    with patch("src.db.interfaces.postgresql.create_engine", return_value=engine):
+        database.startup(validate_connection=False)
+
+    engine.connect.assert_not_called()
+    assert database.session_factory is not None
+
+
 def test_alembic_revision_is_discoverable():
     revision_path = (
         Path(__file__).parents[2]

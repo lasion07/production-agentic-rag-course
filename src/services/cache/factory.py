@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 def make_redis_client(settings: Settings) -> redis.Redis:
-    """Create Redis client with connection pooling."""
+    """Create a lazy Redis client; connectivity is checked outside startup."""
     redis_settings = settings.redis
 
     try:
@@ -20,16 +20,13 @@ def make_redis_client(settings: Settings) -> redis.Redis:
             decode_responses=redis_settings.decode_responses,
             socket_timeout=redis_settings.socket_timeout,
             socket_connect_timeout=redis_settings.socket_connect_timeout,
-            retry_on_timeout=True,
-            retry_on_error=[redis.ConnectionError, redis.TimeoutError],
+            retry_on_timeout=False,
             ssl=redis_settings.ssl,
             ssl_ca_certs=redis_settings.ssl_ca_certs,
             ssl_cert_reqs=redis_settings.ssl_cert_reqs if redis_settings.ssl else None,
         )
 
-        # Test connection
-        client.ping()
-        logger.info(f"Connected to Redis at {redis_settings.host}:{redis_settings.port}")
+        logger.info("Redis cache client configured for %s:%s", redis_settings.host, redis_settings.port)
         return client
 
     except redis.ConnectionError as e:
@@ -40,13 +37,13 @@ def make_redis_client(settings: Settings) -> redis.Redis:
         raise
 
 
-def make_cache_client(settings: Settings) -> CacheClient:
-    """Create exact match cache client."""
+def make_cache_client(settings: Settings) -> CacheClient | None:
+    """Create the optional cache without making API startup depend on Redis."""
     try:
         redis_client = make_redis_client(settings)
         cache_client = CacheClient(redis_client, settings.redis)
         logger.info("Exact match cache client created successfully")
         return cache_client
     except Exception as e:
-        logger.error(f"Failed to create cache client: {e}")
-        raise
+        logger.warning("Redis cache disabled after construction failure: %s", type(e).__name__)
+        return None
