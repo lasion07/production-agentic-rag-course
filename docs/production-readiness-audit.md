@@ -204,7 +204,15 @@ Orchestrators cannot distinguish “process alive” from “ready to serve.” 
 
 ### PR-P0-06 — Establish an automated release gate
 
-**Evidence**
+**Implementation status: repository gate complete; external activation pending.** The checked-in release workflow
+runs lock verification, Ruff, unit/API contracts, deterministic full-graph/API agent regressions, fresh PostgreSQL migrations,
+OpenSearch/Redis integration contracts and an API image build. Main-branch builds publish a commit-addressed GHCR
+image with SBOM, provenance attestation and release metadata. A separate manually approved Langfuse workflow is
+prepared for staging answer evaluation. It intentionally refuses to run while the seven answer expectations remain
+`needs_human_review`. GitHub authentication, branch-protection required checks and environment secrets/reviewers must
+still be configured on the remote repository before this is an enforceable deployment boundary.
+
+**Evidence before implementation**
 
 - The repository has no CI workflow.
 - Existing `tests/integration/test_services.py` checks basic types/connectivity but does not run the API, ingestion replay, or failure recovery end to end.
@@ -221,6 +229,23 @@ A green local test run cannot prevent an unreviewed commit or dependency/configu
 - Agent regression and fault suites are deployment gates with immutable expected outcomes.
 - Human-review and approve the initial answer dataset; record dataset, prompt, retrieval, model, and schema versions.
 - Produce a versioned image and deployment artifact; support canary plus one-command rollback.
+
+**Implemented evidence**
+
+- `.github/workflows/release-gate.yml` runs on pull requests, main pushes and manual dispatch. Every third-party action
+  is pinned to an immutable commit SHA.
+- The six approved fault cases are checksum-pinned and require 18/18 route, budget and response checks. Each case
+  executes the compiled production graph and ASGI route with deterministic external-service adapters; the runner exits
+  non-zero on either `fail` or `blocked`.
+- `evals/release_manifest.json` records dataset checksums and model, prompt, retrieval and response-schema versions.
+- The integration job provisions digest-pinned PostgreSQL 16, OpenSearch 2.19 and Redis 7, migrates a fresh database,
+  rejects Alembic drift, bootstraps versioned search aliases and runs service round-trip contracts.
+- Main pushes publish `ghcr.io/<repository>:sha-<commit>` with SBOM/provenance and upload digest metadata.
+- `deploy/release-image.sh` accepts digest-pinned images only and provides canary, promote and rollback commands with
+  protected readiness verification plus automatic restoration of the prior digest on a failed replacement.
+- `.github/workflows/hosted-answer-gate.yml` follows the Langfuse experiment-action contract and requires a protected
+  `staging-evaluation` environment plus 100% answer-contract pass rate. It deploys the supplied candidate digest and
+  verifies the served commit before evaluation; dataset/application metadata comes from the validated manifest.
 
 ## P1 — required before broader production use
 

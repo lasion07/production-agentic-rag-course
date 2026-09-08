@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "application_contract": {
+    "model": "gpt-5.4-mini-2026-03-17",
+    "prompt_version": "agentic-prompts-v1",
+    "retrieval_version": "hybrid-rrf-rerank-v1",
+    "response_schema_version": "agentic-ask-v1"
+  },
+  "gates": {
+    "deterministic_contract_pass_rate": 1.0,
+    "answer_contract_pass_rate": 1.0
+  },
+  "datasets": {
+    "deterministic_faults": {
+      "name": "production-agentic-rag-week7-regression-v0",
+      "version": "v0",
+      "path": "notebooks/week7/agentic_eval_dataset_v0.json",
+      "item_count": 6,
+      "sha256": "0c0c4b5e8ecde743d6ec57ef2bca5420c87f13eb5a8fe0161d232c2b430a7017",
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-02"
+    },
+    "hosted_answers": {
+      "name": "production-agentic-rag-week7-answer-v0",
+      "version": "v0",
+      "langfuse_version_timestamp": "2026-09-03T17:10:55.323Z",
+      "path": "notebooks/week7/agentic_answer_eval_dataset_v0.json",
+      "item_count": 7,
+      "sha256": "f832335d37bf188ecb1950388e613afc16a2231b3a06e38537bead66dc11bf51",
+      "review_status": "needs_human_review"
+    }
+  }
+}

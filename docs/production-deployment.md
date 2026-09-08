@@ -98,3 +98,43 @@ pipelines during its own startup.
 - Roll back application code by restoring the previous immutable image reference and recreating API/scheduler.
   Do this only after confirming its schema compatibility. Caddy data is persistent, so certificate state
   survives application rollback.
+
+## Automated release gate
+
+`Production release gate` runs for every pull request and main-branch push. Configure branch protection to require:
+
+- `Lock, lint, unit and API contracts`
+- `Deterministic agent regression (100%)`
+- `PostgreSQL, OpenSearch and Redis contracts`
+- `Build immutable API image`
+
+Main pushes publish a commit-addressed GHCR image and a `release-<commit>` artifact containing its digest. Never
+deploy the mutable tag alone; use the `image@sha256:digest` identity from the artifact.
+
+The separate `Hosted answer release gate` is manual because it deploys a candidate to staging, calls hosted models,
+and consumes provider capacity. Attach a self-hosted runner with labels `self-hosted` and `staging` to the staging
+deployment host. Create a protected GitHub environment named `staging-evaluation` with required reviewers, then configure:
+
+- environment variables `RAG_STAGING_BASE_URL` and `STAGING_ENV_FILE`;
+- secrets `RAG_API_KEY`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY`.
+
+Start the workflow with the exact `image@sha256:digest` from `release-metadata.json` and the corresponding full
+40-character commit SHA. The runner deploys that digest, checks protected readiness, and rejects the run unless
+`/api/v1/ready.version` equals the expected commit. Dataset and application-version inputs are exported from
+`evals/release_manifest.json`; they are not duplicated in workflow literals.
+
+The workflow remains deliberately blocked until all seven answer expected outputs are human-reviewed and the local
+and Langfuse dataset metadata are changed from `needs_human_review` to `approved`.
+
+Run a zero-traffic canary against the same managed dependencies before promotion:
+
+`./deploy/release-image.sh canary /secure/production.env ghcr.io/owner/repository@sha256:<digest>`
+
+Promote that exact digest. The script captures the currently running digest first and restores it automatically if
+the candidate fails startup or protected readiness:
+
+`./deploy/release-image.sh promote /secure/production.env ghcr.io/owner/repository@sha256:<digest>`
+
+An operator-initiated rollback is the same guarded operation using the previously retained digest:
+
+`./deploy/release-image.sh rollback /secure/production.env ghcr.io/owner/repository@sha256:<previous-digest>`

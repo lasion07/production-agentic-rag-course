@@ -94,6 +94,7 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 2. [Production 03 — Consistency và reconciliation](production-03-consistency-reconciliation.md)
 3. [Production 04 — Alembic và OpenSearch alias cutover](production-04-controlled-migrations.md)
 4. [Production 05 — Liveness, readiness và dependency health](production-05-health-readiness-lifecycle.md)
+5. [Production 06 — Automated release gate](production-06-automated-release-gate.md)
 
 ## Cách sử dụng ghi chú
 

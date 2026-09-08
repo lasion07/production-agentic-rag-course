@@ -1,8 +1,8 @@
-"""Deterministic Week 7.4 fault-injection baseline against current source behavior.
+"""Deterministic Week 7.4 fault-injection suite through the real graph and API.
 
-This runner does not modify production code or call external AI services. It probes
-current nodes/tools with controlled doubles, then compares observations with the
-approved target contracts in ``agentic_eval_dataset_v0.json``.
+The production ``AgenticRAGService`` and ``/api/v1/ask-agentic`` route execute for
+every case. Only external LLM, embedding, and search transports are replaced by
+scripted adapters, so the suite remains deterministic and makes no network calls.
 """
 
 from __future__ import annotations
@@ -12,52 +12,82 @@ import inspect
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.services.agents.factory import make_agentic_rag_service
+from src import dependencies
+from src.config import Settings
+from src.main import app
+from src.services.agents.agentic_rag import AgenticRAGService
+from src.services.agents.config import GraphConfig
 from src.services.agents.models import GradeDocuments, GuardrailScoring
-from src.services.agents.nodes.grade_documents_node import (
-    ainvoke_grade_documents_step,
-    route_after_grading,
-)
-from src.services.agents.nodes.guardrail_node import continue_after_guardrail
-from src.services.agents.nodes.tool_execution_node import route_after_tool
-from src.services.agents.tools import execute_retrieval
+from src.services.agents.nodes.rewrite_query_node import QueryRewriteOutput
 
 DATASET_PATH = Path(__file__).with_name("agentic_eval_dataset_v0.json")
 
 
-class FakeStructuredLLM:
-    def __init__(self, result: GradeDocuments):
-        self.result = result
-
-    async def ainvoke(self, _prompt: str) -> GradeDocuments:
-        return self.result
-
-
-class FakeLangChainModel:
-    def __init__(self, result: GradeDocuments):
-        self.result = result
-
-    def with_structured_output(self, _schema: type) -> FakeStructuredLLM:
-        return FakeStructuredLLM(self.result)
+HIT = {
+    "chunk_text": "Transformers use attention to model relevant token relationships.",
+    "arxiv_id": "1706.03762",
+    "title": "Attention Is All You Need",
+    "authors": "Vaswani et al.",
+    "score": 1.0,
+}
 
 
-class FakeOllama:
-    def __init__(self, grades: list[str]):
+class ScriptedStructuredLLM:
+    def __init__(self, owner: "ScriptedLLM", schema: type):
+        self.owner = owner
+        self.schema = schema
+
+    async def ainvoke(self, _prompt: str) -> Any:
+        if self.schema is GuardrailScoring:
+            score = self.owner.guardrail_scores.pop(0)
+            return GuardrailScoring(score=score, reason=f"Injected guardrail score: {score}")
+        if self.schema is GradeDocuments:
+            grade = self.owner.grades.pop(0)
+            return GradeDocuments(binary_score=grade, reasoning=f"Injected grade: {grade}")
+        if self.schema is QueryRewriteOutput:
+            self.owner.rewrite_count += 1
+            return QueryRewriteOutput(
+                rewritten_query="rewritten research query",
+                reasoning="Injected semantic recovery",
+            )
+        raise AssertionError(f"Unexpected structured schema: {self.schema}")
+
+
+class ScriptedLangChainModel:
+    def __init__(self, owner: "ScriptedLLM"):
+        self.owner = owner
+
+    def with_structured_output(self, schema: type) -> ScriptedStructuredLLM:
+        return ScriptedStructuredLLM(self.owner, schema)
+
+    async def ainvoke(self, _prompt: str) -> AIMessage:
+        self.owner.generation_count += 1
+        return AIMessage(content="Grounded deterministic answer [arXiv:1706.03762].")
+
+
+class ScriptedLLM:
+    provider_name = "deterministic"
+
+    def __init__(self, *, guardrail_scores: list[int], grades: list[str]):
+        self.guardrail_scores = list(guardrail_scores)
         self.grades = list(grades)
+        self.rewrite_count = 0
+        self.generation_count = 0
 
-    def get_langchain_model(self, **_kwargs: Any) -> FakeLangChainModel:
-        grade = self.grades.pop(0)
-        return FakeLangChainModel(GradeDocuments(binary_score=grade, reasoning=f"Injected grade: {grade}"))
+    def validate_model(self, model: str | None = None) -> str:
+        return model or "fault-injection-model"
+
+    def get_langchain_model(self, **_kwargs: Any) -> ScriptedLangChainModel:
+        return ScriptedLangChainModel(self)
 
 
 class TimeoutEmbeddings:
@@ -70,25 +100,19 @@ class TimeoutEmbeddings:
         raise httpx.ReadTimeout("Injected Jina timeout", request=request)
 
 
-class UnusedOpenSearch:
-    def search_unified(self, **_kwargs: Any) -> dict[str, Any]:
-        raise AssertionError("OpenSearch must not run after an unhandled embedding timeout")
+class SearchDouble:
+    def __init__(self, effects: list[Any]):
+        self.effects = list(effects)
+        self.calls: list[dict[str, Any]] = []
 
-
-class RelevantOpenSearch:
-    def search_unified(self, **_kwargs: Any) -> dict[str, Any]:
-        return {
-            "total": 1,
-            "hits": [
-                {
-                    "chunk_text": "Attention mechanisms let a model weight relevant token relationships.",
-                    "arxiv_id": "1706.03762",
-                    "title": "Attention Is All You Need",
-                    "authors": "Vaswani et al.",
-                    "score": 1.0,
-                }
-            ],
-        }
+    def search_unified(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        if not self.effects:
+            raise AssertionError("Unexpected OpenSearch call")
+        effect = self.effects.pop(0)
+        if isinstance(effect, Exception):
+            raise effect
+        return effect
 
 
 class SuccessfulEmbeddings:
@@ -96,179 +120,109 @@ class SuccessfulEmbeddings:
         return [0.1, 0.2]
 
 
-class TimeoutSearchTransport:
-    def __init__(self) -> None:
-        self.attempts = 0
+class RecordingAgenticService:
+    def __init__(self, service: AgenticRAGService):
+        self.service = service
+        self.last_result: dict[str, Any] | None = None
 
-    def search(self, **_kwargs: Any) -> dict[str, Any]:
-        self.attempts += 1
-        raise TimeoutError("Injected OpenSearch timeout")
-
-
-class TimeoutOpenSearch:
-    def __init__(self) -> None:
-        self.attempts = 0
-
-    def search_unified(self, **_kwargs: Any) -> dict[str, Any]:
-        self.attempts += 1
-        raise TimeoutError("Injected OpenSearch timeout")
+    async def ask(self, **kwargs: Any) -> dict[str, Any]:
+        self.last_result = await self.service.ask(**kwargs)
+        return self.last_result
 
 
-def runtime_for_grades(grades: list[str], max_retrieval_attempts: int = 2) -> SimpleNamespace:
-    return SimpleNamespace(
-        context=SimpleNamespace(
-            llm_client=FakeOllama(grades),
-            langfuse_enabled=False,
-            trace=None,
-            model_name="fault-injection-model",
-            max_retrieval_attempts=max_retrieval_attempts,
+def _case_dependencies(case_id: str) -> tuple[ScriptedLLM, Any, SearchDouble]:
+    relevant = {"total": 1, "hits": [HIT]}
+    empty = {"total": 0, "hits": []}
+    if case_id == "W7E-01":
+        return ScriptedLLM(guardrail_scores=[20], grades=[]), SuccessfulEmbeddings(), SearchDouble([])
+    if case_id == "W7E-02":
+        return ScriptedLLM(guardrail_scores=[90], grades=["yes"]), SuccessfulEmbeddings(), SearchDouble([relevant])
+    if case_id == "W7E-03":
+        return (
+            ScriptedLLM(guardrail_scores=[90], grades=["no", "yes"]),
+            SuccessfulEmbeddings(),
+            SearchDouble([relevant, relevant]),
         )
-    )
+    if case_id == "W7E-04":
+        return ScriptedLLM(guardrail_scores=[90], grades=[]), SuccessfulEmbeddings(), SearchDouble([empty, empty])
+    if case_id == "W7E-05":
+        return ScriptedLLM(guardrail_scores=[90], grades=["yes"]), TimeoutEmbeddings(), SearchDouble([relevant])
+    if case_id == "W7E-06":
+        return (
+            ScriptedLLM(guardrail_scores=[90], grades=[]),
+            SuccessfulEmbeddings(),
+            SearchDouble([TimeoutError("Injected timeout 1"), TimeoutError("Injected timeout 2")]),
+        )
+    raise ValueError(f"Unknown case: {case_id}")
 
 
-async def grade(query: str, binary_score: str, retrieval_attempts: int = 1) -> dict[str, Any]:
-    from langchain_core.documents import Document
-
-    document = Document(
-        page_content="A controlled document excerpt with enough content for grading.",
-        metadata={
-            "arxiv_id": "fault-paper",
-            "title": "Controlled paper",
-            "authors": [],
-            "source": "https://arxiv.org/pdf/fault-paper.pdf",
-            "score": 1.0,
-        },
+def _make_recording_service(case_id: str) -> tuple[RecordingAgenticService, ScriptedLLM, SearchDouble]:
+    llm, embeddings, search = _case_dependencies(case_id)
+    service = AgenticRAGService(
+        opensearch_client=search,
+        llm_client=llm,
+        embeddings_client=embeddings,
+        langfuse_tracer=None,
+        graph_config=GraphConfig(
+            model="fault-injection-model",
+            max_retrieval_attempts=2,
+            max_embedding_attempts=2,
+            max_search_attempts=2,
+            total_deadline_seconds=30,
+            generation_reserve_seconds=2,
+        ),
     )
-    state = {
-        "messages": [
-            HumanMessage(content=query),
-            ToolMessage(
-                content="A controlled document excerpt with enough content for grading.",
-                tool_call_id="fault-call",
-                name="retrieve_papers",
-            ),
-        ],
-        "retrieval_attempts": retrieval_attempts,
-        "retrieved_documents": [document],
-    }
-    result = await ainvoke_grade_documents_step(
-        state,
-        runtime_for_grades([binary_score]),
-    )
-    return result
+    return RecordingAgenticService(service), llm, search
 
 
 def dependency_construction_blocker() -> str | None:
     try:
-        make_agentic_rag_service(
-            opensearch_client=object(),
-            llm_client=object(),
-            embeddings_client=object(),
-            langfuse_tracer=None,
-            model="test-model",
-        )
+        _make_recording_service("W7E-01")
     except Exception as exc:
         return f"{type(exc).__name__}: {exc}"
     return None
 
 
 async def probe_case(case_id: str, query: str) -> dict[str, Any]:
-    if case_id == "W7E-01":
-        route = continue_after_guardrail(
-            {"messages": [], "guardrail_result": GuardrailScoring(score=20, reason="Injected")},
-            SimpleNamespace(context=SimpleNamespace(guardrail_threshold=60)),
-        )
-        return {
-            "terminal_route": "out_of_scope" if route == "out_of_scope" else route,
-            "business_status": "out_of_scope",
-            "http_status": 200,
-            "retrieval_expected": False,
-            "retrieval_rounds": 0,
-        }
+    service, scripted_llm, search = _make_recording_service(case_id)
+    app.state.settings = Settings(_env_file=None, api_auth_enabled=False, api_rate_limit_enabled=False)
+    app.dependency_overrides[dependencies.get_agentic_rag_service] = lambda: service
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://fault-eval") as client:
+            response = await client.post(
+                "/api/v1/ask-agentic",
+                json={"query": query, "top_k": 3, "use_hybrid": True},
+            )
+    finally:
+        app.dependency_overrides.pop(dependencies.get_agentic_rag_service, None)
 
-    if case_id == "W7E-02":
-        result = await grade(query, "yes")
-        route = route_after_grading({**result, "retrieval_attempts": 1}, runtime_for_grades([], 2))
-        return {
-            "terminal_route": route,
-            "business_status": "success",
-            "http_status": 200,
-            "retrieval_expected": True,
-            "retrieval_rounds": 1,
-            "minimum_sources": 1,
-        }
-
-    if case_id == "W7E-03":
-        first = await grade(query, "no", retrieval_attempts=1)
-        first_route = first["routing_decision"]
-        second = await grade(query, "yes", retrieval_attempts=2)
-        second_route = route_after_grading({**second, "retrieval_attempts": 2}, runtime_for_grades([], 2))
-        return {
-            "terminal_route": second_route,
-            "business_status": "success",
-            "http_status": 200,
-            "retrieval_rounds": 2,
-            "rewrite_expected": first_route == "rewrite_query",
-            "rewrite_count": 1,
-        }
-
-    if case_id == "W7E-04":
-        empty_message = ToolMessage(content="", tool_call_id="empty", name="retrieve_papers")
-        first_state = {"messages": [HumanMessage(content=query), empty_message], "retrieval_attempts": 1}
-        first = await ainvoke_grade_documents_step(first_state, runtime_for_grades([], 2))
-        second_state = {"messages": [HumanMessage(content=query), empty_message], "retrieval_attempts": 2}
-        second = await ainvoke_grade_documents_step(second_state, runtime_for_grades([], 2))
-        return {
-            "terminal_route": second["routing_decision"],
-            "business_status": "insufficient_evidence",
-            "http_status": 200,
-            "retrieval_rounds": 2,
-            "rewrite_count": int(first["routing_decision"] == "rewrite_query")
-            + int(second["routing_decision"] == "rewrite_query"),
-            "generation_expected": False,
-            "tool_failures": 0,
-        }
-
-    if case_id == "W7E-05":
-        embeddings = TimeoutEmbeddings()
-        outcome = await execute_retrieval(
-            query=query,
-            opensearch_client=RelevantOpenSearch(),
-            embeddings_client=embeddings,
-            top_k=3,
-            use_hybrid=True,
-        )
-        return {
-            "terminal_route": "generate_answer" if outcome.documents else "retrieval_unavailable",
-            "business_status": outcome.status,
-            "http_status": 200 if outcome.documents else 503,
-            "requested_search_mode": outcome.requested_search_mode,
-            "actual_search_mode": outcome.actual_search_mode,
-            "embedding_attempts": outcome.embedding_attempts,
-            "fallbacks": outcome.fallbacks,
-            "retrieval_rounds": 1,
-        }
-
-    if case_id == "W7E-06":
-        client = TimeoutOpenSearch()
-        outcome = await execute_retrieval(
-            query=query,
-            opensearch_client=client,
-            embeddings_client=SuccessfulEmbeddings(),
-            use_hybrid=True,
-        )
-        route = route_after_tool({"tool_status": outcome.status})
-        return {
-            "terminal_route": route,
-            "business_status": "retrieval_unavailable",
-            "http_status": 503,
-            "tool_attempts": outcome.tool_attempts,
-            "tool_failures": outcome.tool_failures,
-            "error_masked_as_empty": False,
-            "generation_expected": False,
-        }
-
-    raise ValueError(f"Unknown case: {case_id}")
+    payload = response.json()
+    graph_result = service.last_result or {}
+    business_status = payload.get("business_status") or payload.get("error", {}).get("code")
+    terminal_route = graph_result.get("terminal_route")
+    retrieval_rounds = graph_result.get("retrieval_attempts", 0)
+    source_count = len(payload.get("sources", []))
+    generation_count = scripted_llm.generation_count
+    return {
+        "terminal_route": terminal_route,
+        "business_status": business_status,
+        "http_status": response.status_code,
+        "retrieval_expected": retrieval_rounds > 0,
+        "retrieval_rounds": retrieval_rounds,
+        "rewrite_expected": scripted_llm.rewrite_count > 0,
+        "rewrite_count": scripted_llm.rewrite_count,
+        "generation_expected": generation_count > 0,
+        "source_count": source_count,
+        "requested_search_mode": graph_result.get("requested_search_mode"),
+        "actual_search_mode": graph_result.get("actual_search_mode"),
+        "embedding_attempts": graph_result.get("embedding_attempts", 0),
+        "tool_attempts": graph_result.get("tool_attempts", 0),
+        "tool_failures": graph_result.get("tool_failures", 0),
+        "fallbacks": graph_result.get("fallbacks", 0),
+        "error_masked_as_empty": business_status == "insufficient_evidence"
+        and graph_result.get("tool_failures", 0) > 0,
+    }
 
 
 def compare_exact(expected: dict[str, Any], actual: dict[str, Any], keys: list[str]) -> str:
@@ -300,7 +254,7 @@ def evaluate(expected: dict[str, Any], actual: dict[str, Any], blocker: str | No
     if "maximum_rewrites" in expected and actual.get("rewrite_count", 0) > expected["maximum_rewrites"]:
         budget_status = "fail"
 
-    if "minimum_sources" in expected and actual.get("minimum_sources", 0) < expected["minimum_sources"]:
+    if "minimum_sources" in expected and actual.get("source_count", 0) < expected["minimum_sources"]:
         route_status = "fail"
 
     response_status = "blocked" if blocker else compare_exact(expected, actual, ["http_status"])
@@ -337,6 +291,7 @@ async def main() -> None:
         status: sum(score == status for result in results for score in result.values()) for status in ("pass", "fail", "blocked")
     }
     print(f"score_summary={json.dumps(counts, sort_keys=True)}")
+    raise SystemExit(1 if counts["fail"] or counts["blocked"] else 0)
 
 
 if __name__ == "__main__":

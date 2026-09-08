@@ -167,4 +167,5 @@ Production readiness audit: [docs/production-readiness-audit.md](../../docs/prod
 - Đã giảm rủi ro nhưng còn việc: TD-W7-09, 11.
 - Chưa triển khai: TD-W7-01.
 - Cần mở rộng evaluation coverage: TD-W7-20.
-- Launch blockers tổng thể: `PR-P0-01` đến `PR-P0-05` đã triển khai; tiếp theo là PR-P0-06.
+- Launch blockers tổng thể: code cho `PR-P0-01` đến `PR-P0-06` đã triển khai. `PR-P0-06` còn bước activation
+  ngoài repository: cấu hình branch protection/GitHub environment secrets và human-approve 7 answer contracts.
