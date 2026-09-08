@@ -1,4 +1,4 @@
-"""Upsert the provisional Week 7 answer-regression dataset into Langfuse."""
+"""Upsert the human-reviewed Week 7 answer-regression dataset into Langfuse."""
 
 from __future__ import annotations
 
@@ -22,16 +22,22 @@ def main() -> None:
         os.environ["LANGFUSE_HOST"] = os.environ["LANGFUSE_BASE_URL"]
 
     items = json.loads(DATASET_PATH.read_text())
+    review_statuses = {
+        item.get("metadata", {}).get("review_status") for item in items
+    }
+    if len(review_statuses) != 1 or None in review_statuses:
+        raise ValueError("Dataset items must have one consistent review status")
+    review_status = review_statuses.pop()
     client = Langfuse()
     client.create_dataset(
         name=DATASET_NAME,
         description=(
-            "Provisional answer-level regression cases for the three public arXiv papers. "
-            "Expected outputs require human review before they are treated as release ground truth."
+            "Human-reviewed answer-level regression cases for three public arXiv papers. "
+            "Review excerpts are metadata-only and must never be passed to the candidate task."
         ),
         metadata={
             "dataset_version": "v0",
-            "review_status": "needs_human_review",
+            "review_status": review_status,
             "item_count": len(items),
         },
     )
@@ -49,7 +55,7 @@ def main() -> None:
     client.flush()
     print(f"dataset_name={DATASET_NAME}")
     print(f"items_upserted={len(items)}")
-    print("review_status=needs_human_review")
+    print(f"review_status={review_status}")
 
 
 if __name__ == "__main__":

@@ -11,6 +11,16 @@
       "business_status": "success",
       "required_answer_fragments": ["56.4", "68.2"],
       "required_answer_any_groups": [["noise", "noising"], ["denois", "diffusion process"]],
+      "required_claims": [
+        {
+          "claim_id": "diffusion_repair_range",
+          "proposition": "The diffusion code-repair model repairs 56.4–68.2% of Python and Excel snippets across different noise levels."
+        },
+        {
+          "claim_id": "diffusion_repair_method",
+          "proposition": "Last-mile repair is performed by adding noise to a broken code snippet and resuming the reverse diffusion or denoising process."
+        }
+      ],
       "required_source_fragments": ["2508.11110"],
       "required_citation_ids": ["2508.11110"]
     },
@@ -19,7 +29,22 @@
       "case_type": "quantitative_claim_grounding",
       "evaluation_layer": "answer_contract",
       "evidence_arxiv_ids": ["2508.11110v1"],
-      "review_status": "needs_human_review"
+      "gold_evidence": [
+        {
+          "chunk_id": "bf14b3d3-3a1d-4a79-8276-95619ea495f3:v1:c1",
+          "arxiv_id": "2508.11110v1",
+          "section_title": "1 Introduction",
+          "supports": ["diffusion_repair_range", "diffusion_repair_method"],
+          "review_excerpt": [
+            "adding noise to a broken code snippet and resuming the diffusion process",
+            "repair 56.4-68.2% of Python and Excel snippets across different noise levels"
+          ],
+          "review_only": true
+        }
+      ],
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-09"
     }
   },
   {
@@ -34,6 +59,16 @@
       "business_status": "success",
       "required_answer_fragments": ["2.5", "3.5"],
       "required_answer_any_groups": [["divers", "variety"], ["complex", "complexity"]],
+      "required_claims": [
+        {
+          "claim_id": "synthetic_data_properties",
+          "proposition": "Diffusion-generated synthetic data has higher diversity and complexity than the compared existing generators and GPT-4o."
+        },
+        {
+          "claim_id": "fine_tuning_improvement",
+          "proposition": "Fine-tuning the evaluated repair models on the synthetic data improves performance by 2.5–3.5%."
+        }
+      ],
       "required_source_fragments": ["2508.11110"],
       "required_citation_ids": ["2508.11110"]
     },
@@ -42,7 +77,22 @@
       "case_type": "quantitative_and_qualitative_grounding",
       "evaluation_layer": "answer_contract",
       "evidence_arxiv_ids": ["2508.11110v1"],
-      "review_status": "needs_human_review"
+      "gold_evidence": [
+        {
+          "chunk_id": "bf14b3d3-3a1d-4a79-8276-95619ea495f3:v1:c1",
+          "arxiv_id": "2508.11110v1",
+          "section_title": "1 Introduction",
+          "supports": ["synthetic_data_properties", "fine_tuning_improvement"],
+          "review_excerpt": [
+            "synthetic data has higher diversity and complexity compared to existing data generators and GPT-4o",
+            "higher performance observed (+2.5 - 3.5%) when fine-tuning different models"
+          ],
+          "review_only": true
+        }
+      ],
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-09"
     }
   },
   {
@@ -57,6 +107,12 @@
       "business_status": "success",
       "required_answer_fragments": ["proximal gradient", "ADMM"],
       "required_answer_any_groups": [["accelerated", "acceleration"]],
+      "required_claims": [
+        {
+          "claim_id": "par_optimization_algorithms",
+          "proposition": "The PAR paper presents proximal gradient, accelerated proximal gradient, and ADMM optimization algorithms."
+        }
+      ],
       "required_source_fragments": ["2508.11112"],
       "required_citation_ids": ["2508.11112"]
     },
@@ -65,7 +121,21 @@
       "case_type": "enumeration_grounding",
       "evaluation_layer": "answer_contract",
       "evidence_arxiv_ids": ["2508.11112v1"],
-      "review_status": "needs_human_review"
+      "gold_evidence": [
+        {
+          "chunk_id": "e47250e9-0148-494f-9971-6a1a15fda960:v1:c22",
+          "arxiv_id": "2508.11112v1",
+          "section_title": "5.2 Comparison of different optimization algorithms and PAR variants (Part 1)",
+          "supports": ["par_optimization_algorithms"],
+          "review_excerpt": [
+            "three algorithms: proximal gradient (PG), accelerated proximal gradient (acc_PG), and ADMM"
+          ],
+          "review_only": true
+        }
+      ],
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-09"
     }
   },
   {
@@ -80,6 +150,16 @@
       "business_status": "success",
       "required_answer_fragments": ["critical point", "quantiz"],
       "required_answer_any_groups": [["parameter", "dimension"], ["sample", "data"]],
+      "required_claims": [
+        {
+          "claim_id": "critical_point_quantization_bound",
+          "proposition": "Every critical point of the PARO objective is at least (1 - n/d)-quantized."
+        },
+        {
+          "claim_id": "overparameterized_quantization",
+          "proposition": "When the parameter dimension d is much larger than the sample size n, PARO critical points are highly quantized."
+        }
+      ],
       "required_source_fragments": ["2508.11112"],
       "required_citation_ids": ["2508.11112"]
     },
@@ -88,7 +168,22 @@
       "case_type": "theoretical_claim_grounding",
       "evaluation_layer": "answer_contract",
       "evidence_arxiv_ids": ["2508.11112v1"],
-      "review_status": "needs_human_review"
+      "gold_evidence": [
+        {
+          "chunk_id": "e47250e9-0148-494f-9971-6a1a15fda960:v1:c26",
+          "arxiv_id": "2508.11112v1",
+          "section_title": "6 Conclusion and future directions",
+          "supports": ["critical_point_quantization_bound", "overparameterized_quantization"],
+          "review_excerpt": [
+            "every critical point of the PARO objective is at least (1 - n/d)-quantized",
+            "highly quantized solutions in the overparameterized regime where d ≫ n"
+          ],
+          "review_only": true
+        }
+      ],
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-09"
     }
   },
   {
@@ -103,6 +198,16 @@
       "business_status": "success",
       "required_answer_fragments": ["1.8", "15.6", "26.5"],
       "required_answer_any_groups": [["million", "1,800,000"]],
+      "required_claims": [
+        {
+          "claim_id": "tafo_corpus_size",
+          "proposition": "TaFo is trained and evaluated using a corpus of 1.8 million public spreadsheets or workbooks."
+        },
+        {
+          "claim_id": "tafo_improvement_range",
+          "proposition": "TaFo achieves 15.6–26.5% higher execution-match accuracy than the compared prior methods or baselines."
+        }
+      ],
       "required_source_fragments": ["2508.11121"],
       "required_citation_ids": ["2508.11121"]
     },
@@ -111,7 +216,22 @@
       "case_type": "multi_numeric_claim_grounding",
       "evaluation_layer": "answer_contract",
       "evidence_arxiv_ids": ["2508.11121v1"],
-      "review_status": "needs_human_review"
+      "gold_evidence": [
+        {
+          "chunk_id": "3eaf8051-5893-485c-9f15-8552ca91e11f:v1:c3",
+          "arxiv_id": "2508.11121v1",
+          "section_title": "1 Introduction",
+          "supports": ["tafo_corpus_size", "tafo_improvement_range"],
+          "review_excerpt": [
+            "a corpus of 1.8 Million spreadsheet",
+            "15.6%-26.5% higher execution match accuracy on our benchmark"
+          ],
+          "review_only": true
+        }
+      ],
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-09"
     }
   },
   {
@@ -126,6 +246,16 @@
       "business_status": "success",
       "required_answer_fragments": ["format"],
       "required_answer_any_groups": [["neuro-symbolic", "neurosymbolic"], ["trigger", "rule"], ["visual", "appearance"], ["without", "does not require"]],
+      "required_claims": [
+        {
+          "claim_id": "tafo_neuro_symbolic_mechanism",
+          "proposition": "TaFo combines symbolic, neural, and neuro-symbolic generation to predict conditional-formatting rules and their visual properties."
+        },
+        {
+          "claim_id": "tafo_without_user_specification",
+          "proposition": "TaFo predicts formatting without requiring formatted examples or natural-language instructions from the user."
+        }
+      ],
       "required_source_fragments": ["2508.11121"],
       "required_citation_ids": ["2508.11121"]
     },
@@ -134,7 +264,22 @@
       "case_type": "mechanism_grounding",
       "evaluation_layer": "answer_contract",
       "evidence_arxiv_ids": ["2508.11121v1"],
-      "review_status": "needs_human_review"
+      "gold_evidence": [
+        {
+          "chunk_id": "3eaf8051-5893-485c-9f15-8552ca91e11f:v1:c3",
+          "arxiv_id": "2508.11121v1",
+          "section_title": "1 Introduction",
+          "supports": ["tafo_neuro_symbolic_mechanism", "tafo_without_user_specification"],
+          "review_excerpt": [
+            "predictively suggests conditional formatting rules without the need for communicating any intent",
+            "combining a purely symbolic generator, a purely neural generator, and a neuro-symbolic generator"
+          ],
+          "review_only": true
+        }
+      ],
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-09"
     }
   },
   {
@@ -149,6 +294,16 @@
       "business_status": "success",
       "required_answer_fragments": ["56.4", "68.2", "15.6", "26.5"],
       "required_answer_any_groups": [["diffusion", "code-repair"], ["TaFo", "Tabularis Formatus"]],
+      "required_claims": [
+        {
+          "claim_id": "diffusion_range_attribution",
+          "proposition": "The 56.4–68.2% repair-success range belongs to the diffusion code-repair paper."
+        },
+        {
+          "claim_id": "tafo_range_attribution",
+          "proposition": "The 15.6–26.5% performance-improvement range belongs to the TaFo paper."
+        }
+      ],
       "required_source_fragments": ["2508.11110", "2508.11121"],
       "required_citation_ids": ["2508.11110", "2508.11121"]
     },
@@ -157,7 +312,31 @@
       "case_type": "cross_document_attribution",
       "evaluation_layer": "answer_contract",
       "evidence_arxiv_ids": ["2508.11110v1", "2508.11121v1"],
-      "review_status": "needs_human_review"
+      "gold_evidence": [
+        {
+          "chunk_id": "bf14b3d3-3a1d-4a79-8276-95619ea495f3:v1:c1",
+          "arxiv_id": "2508.11110v1",
+          "section_title": "1 Introduction",
+          "supports": ["diffusion_range_attribution"],
+          "review_excerpt": [
+            "repair 56.4-68.2% of Python and Excel snippets across different noise levels"
+          ],
+          "review_only": true
+        },
+        {
+          "chunk_id": "3eaf8051-5893-485c-9f15-8552ca91e11f:v1:c3",
+          "arxiv_id": "2508.11121v1",
+          "section_title": "1 Introduction",
+          "supports": ["tafo_range_attribution"],
+          "review_excerpt": [
+            "15.6%-26.5% higher execution match accuracy on our benchmark"
+          ],
+          "review_only": true
+        }
+      ],
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-09"
     }
   }
 ]
