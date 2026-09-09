@@ -80,4 +80,5 @@ class AgentState(TypedDict):
     tool_attempts: int
     tool_failures: int
     fallbacks: int
+    retrieval_diagnostics: List[Dict[str, Any]]
     metadata: Dict[str, Any]

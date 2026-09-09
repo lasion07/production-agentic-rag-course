@@ -65,6 +65,7 @@ def _documents_from_hits(hits: list[dict], search_mode: str, top_k: int) -> List
             Document(
                 page_content=hit["chunk_text"],
                 metadata={
+                    "chunk_id": hit.get("chunk_id", ""),
                     "arxiv_id": hit["arxiv_id"],
                     "title": hit.get("title", ""),
                     "authors": hit.get("authors", ""),
@@ -77,6 +78,44 @@ def _documents_from_hits(hits: list[dict], search_mode: str, top_k: int) -> List
             )
         )
     return documents
+
+
+def _build_retrieval_diagnostics(
+    candidates: List[Document], selected: List[Document]
+) -> dict:
+    """Build content-free diagnostics for candidate and final retrieval stages."""
+
+    selected_ranks = {
+        id(document): rank
+        for rank, document in enumerate(selected, start=1)
+    }
+    candidate_rows = []
+    for rank, document in enumerate(candidates, start=1):
+        chunk_id = str(document.metadata.get("chunk_id", ""))
+        raw_score = document.metadata.get("score", 0.0)
+        try:
+            retrieval_score = float(raw_score)
+        except (TypeError, ValueError):
+            retrieval_score = 0.0
+        candidate_rows.append(
+            {
+                "chunk_id": chunk_id,
+                "arxiv_id": str(document.metadata.get("arxiv_id", "")),
+                "candidate_rank": rank,
+                "retrieval_score": retrieval_score,
+                "selected": id(document) in selected_ranks,
+                "selected_rank": selected_ranks.get(id(document)),
+                "selection_score": document.metadata.get("selection_score"),
+            }
+        )
+    return {
+        "candidate_count": len(candidates),
+        "selected_count": len(selected),
+        "candidate_chunks": candidate_rows,
+        "selected_chunk_ids": [
+            str(document.metadata.get("chunk_id", "")) for document in selected
+        ],
+    }
 
 
 async def execute_retrieval(
@@ -175,6 +214,7 @@ async def execute_retrieval(
             )
             candidates = _documents_from_hits(search_results.get("hits", []), actual_mode, top_k)
             documents = select_context_documents(query, candidates, final_k=top_k)
+            diagnostics = _build_retrieval_diagnostics(candidates, documents)
             logger.info(
                 "Selected %s final context chunks from %s candidates",
                 len(documents),
@@ -189,6 +229,7 @@ async def execute_retrieval(
                 tool_attempts=search_attempt,
                 tool_failures=search_failures,
                 fallbacks=fallbacks,
+                diagnostics=diagnostics,
             )
         except Exception as exc:
             last_search_error = exc

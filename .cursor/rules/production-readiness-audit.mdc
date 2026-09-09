@@ -1,0 +1,45 @@
+---
+description: Require proactive production risk analysis, adversarial verification, and honest completion claims
+alwaysApply: true
+---
+
+# Production Readiness Audit
+
+Apply this workflow when changing or reviewing runtime code, data/schema migrations,
+deployment, prompts/retrieval, agent routing, or evaluation/release gates. Pure
+explanations and documentation-only edits do not require the full audit.
+
+## Before implementation
+
+1. State the intended behavior, invariants, and terminal outcomes.
+2. Inspect actual code and relevant runtime/data state; list material assumptions.
+3. Run a pre-mortem: identify ordinary failure, partial failure, and misleading
+   success where the system reports success while returning stale or wrong results.
+4. Check relevant risk lenses: semantic correctness, consistency/versioning,
+   concurrency/idempotency, retry ownership, security/privacy, observability,
+   deployment/rollback, resource limits, and evaluation integrity.
+
+## Verification requirements
+
+- Validate the implementation and the specification/test oracle separately.
+- Cover happy paths plus negative, boundary, adversarial, and fault-injection cases
+  in proportion to risk.
+- Use real-dependency or end-to-end probes when mocks cannot establish the claim.
+- For every evaluator, include a passing example and near-miss mutations that must
+  fail: wrong attribution, direction, unit, citation, or unsupported claim.
+- Human-approved ground truth must link to reviewable evidence. Never let the
+  candidate task read expected outputs or review-only evidence.
+
+## Completion contract
+
+Never equate green tests with production readiness. Before declaring completion,
+report:
+
+- what was verified and with which evidence;
+- what remains unverified;
+- unresolved risks/technical debt with severity;
+- the release recommendation and rollback condition.
+
+Do not hide a P0/P1 correctness or safety gap behind a fallback, average score, or
+successful health check. Warn the user before proceeding when a high-impact gap is
+discovered.

@@ -24,11 +24,13 @@
     "hosted_answers": {
       "name": "production-agentic-rag-week7-answer-v0",
       "version": "v0",
-      "langfuse_version_timestamp": "2026-09-03T17:10:55.323Z",
+      "langfuse_version_timestamp": "2026-09-08T17:18:23.630Z",
       "path": "notebooks/week7/agentic_answer_eval_dataset_v0.json",
       "item_count": 7,
-      "sha256": "f832335d37bf188ecb1950388e613afc16a2231b3a06e38537bead66dc11bf51",
-      "review_status": "needs_human_review"
+      "sha256": "df0d1dbd90cf3d05fbc766a9aab17fe1e452d739eb7cc082386075444e94cb1b",
+      "review_status": "approved",
+      "approved_by": "learner",
+      "approved_at": "2026-09-09"
     }
   }
 }

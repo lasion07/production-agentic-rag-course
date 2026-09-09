@@ -42,6 +42,45 @@ def _validate_dataset(name: str, contract: dict[str, Any]) -> list[dict[str, Any
         raise ValueError(f"{name} requires unique non-empty metadata.case_id values")
     if any("input" not in item or "expectedOutput" not in item for item in items):
         raise ValueError(f"{name} items require input and expectedOutput")
+    if name == "hosted_answers":
+        for item in items:
+            case_id = item["metadata"]["case_id"]
+            claims = item["expectedOutput"].get("required_claims", [])
+            claim_ids = [claim.get("claim_id") for claim in claims]
+            if (
+                not claims
+                or any(
+                    not claim_id or not str(claim.get("proposition", "")).strip()
+                    for claim_id, claim in zip(claim_ids, claims)
+                )
+                or len(claim_ids) != len(set(claim_ids))
+            ):
+                raise ValueError(f"{case_id} requires unique, non-empty semantic claims")
+
+            evidence = item["metadata"].get("gold_evidence", [])
+            supported_claims: set[str] = set()
+            for reference in evidence:
+                required_fields = {
+                    "chunk_id",
+                    "arxiv_id",
+                    "section_title",
+                    "supports",
+                    "review_excerpt",
+                }
+                if (
+                    not required_fields.issubset(reference)
+                    or reference.get("review_only") is not True
+                    or not reference["supports"]
+                    or not reference["review_excerpt"]
+                ):
+                    raise ValueError(
+                        f"{case_id} requires complete review-only gold evidence"
+                    )
+                supported_claims.update(reference["supports"])
+            if supported_claims != set(claim_ids):
+                raise ValueError(
+                    f"{case_id} gold evidence must support exactly its required claims"
+                )
     return items
 
 
@@ -71,6 +110,22 @@ def validate(*, require_answer_approved: bool = False) -> dict[str, Any]:
     }
     if answer_statuses != {answer_contract.get("review_status")}:
         raise ValueError("Hosted answer item review status differs from release manifest")
+    if answer_contract.get("review_status") == "approved":
+        approval = (
+            answer_contract.get("approved_by"),
+            answer_contract.get("approved_at"),
+        )
+        if not all(approval):
+            raise ValueError("Approved hosted answer dataset requires approval metadata")
+        if any(
+            (
+                item.get("metadata", {}).get("approved_by"),
+                item.get("metadata", {}).get("approved_at"),
+            )
+            != approval
+            for item in answer_items
+        ):
+            raise ValueError("Hosted answer item approval metadata differs from release manifest")
     if require_answer_approved and answer_contract.get("review_status") != "approved":
         raise ValueError(
             "Hosted answer dataset is not approved; review all expected outputs before enabling this gate"

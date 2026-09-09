@@ -81,9 +81,8 @@ def test_release_manifest_locks_datasets_and_versions(tmp_path: Path) -> None:
 
     assert result["fault_items"] == 6
     assert result["answer_items"] == 7
-    assert result["answer_review_status"] == "needs_human_review"
-    with pytest.raises(ValueError, match="not approved"):
-        validator.validate(require_answer_approved=True)
+    assert result["answer_review_status"] == "approved"
+    assert validator.validate(require_answer_approved=True)["answer_items"] == 7
 
     github_output = tmp_path / "github-output"
     validator._write_github_output(github_output, result)
@@ -92,7 +91,7 @@ def test_release_manifest_locks_datasets_and_versions(tmp_path: Path) -> None:
         for line in github_output.read_text(encoding="utf-8").splitlines()
     )
     assert exported["answer_dataset_name"] == "production-agentic-rag-week7-answer-v0"
-    assert exported["answer_dataset_timestamp"] == "2026-09-03T17:10:55.323Z"
+    assert exported["answer_dataset_timestamp"] == "2026-09-08T17:18:23.630Z"
     assert exported["model"] == "gpt-5.4-mini-2026-03-17"
 
 
@@ -162,6 +161,56 @@ def test_answer_contract_rejects_extra_and_partial_citation_ids() -> None:
     assert experiment.answer_contract_evaluator(output=output, expected_output=expected).value == 0.0
     output["payload"]["answer"] = "Prefix only [arXiv:2508.1111]."
     assert experiment.answer_contract_evaluator(output=output, expected_output=expected).value == 0.0
+
+
+def test_answer_task_never_reads_expected_output_or_review_evidence(monkeypatch) -> None:
+    experiment = _load_module("answer_gate_no_oracle_leak", "experiments/agentic_answer_gate.py")
+
+    class CandidateItem:
+        input = {"query": "candidate-visible query"}
+
+        @property
+        def expected_output(self):
+            raise AssertionError("expected output leaked into candidate task")
+
+        @property
+        def metadata(self):
+            raise AssertionError("review-only evidence leaked into candidate task")
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"answer": "ok", "sources": []}
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def post(path, *, headers, json):
+            assert path == "/api/v1/ask-agentic"
+            assert headers == {"X-API-Key": "test-key"}
+            assert json == {"query": "candidate-visible query"}
+            return FakeResponse()
+
+    monkeypatch.setenv("RAG_STAGING_BASE_URL", "https://staging.example.test")
+    monkeypatch.setenv("RAG_API_KEY", "test-key")
+    monkeypatch.setattr(experiment.httpx, "Client", FakeClient)
+
+    result = experiment.answer_task(item=CandidateItem())
+
+    assert result == {
+        "http_status": 200,
+        "payload": {"answer": "ok", "sources": []},
+    }
 
 
 def test_release_script_requires_digest_and_supports_canary_and_rollback(tmp_path: Path) -> None:
