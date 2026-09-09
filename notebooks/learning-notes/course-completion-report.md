@@ -37,6 +37,7 @@ Kết quả chạy ngày 2026-09-09:
 - `uv lock --check`: pass.
 - Ruff trên source, Airflow, tests, migrations, scripts và experiments: pass.
 - Unit/API suite: **263 passed**, 18 deprecation warnings.
+- Local PostgreSQL/OpenSearch/Redis release contracts: **3/3 passed**.
 - Release manifest: pass; 6 fault cases và 7 hosted-answer cases đều approved.
 - Deterministic agent regression: **18/18 checks**, 0 fail, 0 blocked.
 - Live OpenAI answer contracts: **7/7**, 0 fail.
@@ -45,6 +46,12 @@ Kết quả chạy ngày 2026-09-09:
   3 context chunks và grounded quantitative answer.
 - Langfuse trace `1185e281a4f058cc557a7015f0afd172`: 22 observations;
   candidate/final diagnostics record 12 candidates and three selected chunks.
+
+GitHub Actions run `34367211091` did not execute these tests because GitHub
+reported that the account was locked by a billing issue. Its red jobs are an
+external CI setup blocker, not test failures. The equivalent quality, agent and
+service gates above were therefore executed locally before merge. Future merges
+must fail closed behind branch protection until GitHub Actions billing is restored.
 
 ## Những gì chứng nhận này khẳng định
 
