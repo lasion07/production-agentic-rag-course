@@ -20,6 +20,8 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 - **Technical-debt verification:** 6 fault cases đạt 18/18; quantitative answer case đã chuyển xanh sau candidate reranking/context selection
 - **Bằng chứng Week 7.7:** 12 candidates → 3 final chunks; quantitative claim `56.4–68.2%` có đúng source; full suite 168 pass
 - **Production hardening:** PR-P0-01 đến PR-P0-04 đã hoàn thành; migration drill PostgreSQL pass và OpenSearch cutover/rollback giữ đủ 81/81 chunks
+- **Graduation gate:** 263 unit/API tests pass, fault contracts 18/18 và live answer contracts 7/7; Langfuse đã xác nhận candidate/final retrieval diagnostics
+- **Khóa học:** hoàn thành ngày 2026-09-09; các tối ưu còn lại chuyển sang kế hoạch Production Launch Readiness
 - **Technical debt:** Các lỗi source được hoãn có chủ đích đến sau khóa học và theo dõi trong backlog riêng
 - **Cần ôn lại:** ingestion ordering, serving dependencies và BM25 fallback
 
@@ -33,6 +35,8 @@ Tài liệu này tổng hợp kiến thức sau mỗi bài học theo hướng n
 4. [Technical debt backlog — Các lỗi source cần cải thiện sau khóa học](technical-debt-backlog.md)
 5. [Bài kiểm tra thường xuyên số 2 — Week 7 Agentic RAG](assessment-02-week7-agentic-rag.md)
 6. [Kết quả bài kiểm tra số 2 — Week 7 Agentic RAG — 85/100](assessment-02-week7-agentic-rag-result.md)
+7. [Báo cáo hoàn thành khóa học — Production Agentic RAG](course-completion-report.md)
+8. [Chứng nhận hoàn thành — PDF](../../output/pdf/production-agentic-rag-course-certificate.pdf)
 
 ### Phần 1 — Nền tảng kiến trúc
 

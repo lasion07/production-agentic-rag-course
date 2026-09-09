@@ -49,6 +49,15 @@ async def ainvoke_tool_retrieve_step(state: AgentState, runtime: Runtime[Context
         "tool_attempts": state.get("tool_attempts", 0) + outcome.tool_attempts,
         "tool_failures": state.get("tool_failures", 0) + outcome.tool_failures,
         "fallbacks": state.get("fallbacks", 0) + outcome.fallbacks,
+        "retrieval_diagnostics": [
+            *state.get("retrieval_diagnostics", []),
+            {
+                "retrieval_round": state.get("retrieval_attempts", 0),
+                "query": query,
+                "search_mode": outcome.actual_search_mode,
+                **outcome.diagnostics,
+            },
+        ],
     }
     if outcome.status == "degraded":
         updates["business_status"] = "degraded"

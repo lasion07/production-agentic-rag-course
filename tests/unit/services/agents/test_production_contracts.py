@@ -18,6 +18,7 @@ from src.services.agents.nodes.tool_execution_node import route_after_tool
 from src.services.agents.tools import execute_retrieval
 
 HIT = {
+    "chunk_id": "1706.03762:v1:c1",
     "chunk_text": "Transformers use attention to model token relationships.",
     "arxiv_id": "1706.03762",
     "title": "Attention Is All You Need",
@@ -123,6 +124,40 @@ async def test_valid_zero_hits_remains_semantic_miss() -> None:
     assert outcome.documents == []
     assert outcome.tool_failures == 0
     assert route_after_tool({"tool_status": outcome.status}) == "grade_documents"
+
+
+@pytest.mark.asyncio
+async def test_retrieval_diagnostics_distinguish_candidates_from_final_context() -> None:
+    secondary_hit = {
+        **HIT,
+        "chunk_id": "1706.03762:v1:c2",
+        "chunk_text": "A secondary discussion with little query overlap.",
+        "score": None,
+    }
+    outcome = await execute_retrieval(
+        query="How does transformer attention work?",
+        opensearch_client=SearchDouble(
+            [{"total": 2, "hits": [HIT, secondary_hit]}]
+        ),
+        embeddings_client=SuccessfulEmbeddings(),
+        top_k=1,
+        use_hybrid=True,
+    )
+
+    diagnostics = outcome.diagnostics
+    assert diagnostics["candidate_count"] == 2
+    assert diagnostics["selected_count"] == 1
+    assert diagnostics["selected_chunk_ids"] == ["1706.03762:v1:c1"]
+    selected_row = diagnostics["candidate_chunks"][0]
+    assert selected_row["chunk_id"] == "1706.03762:v1:c1"
+    assert selected_row["arxiv_id"] == "1706.03762"
+    assert selected_row["candidate_rank"] == 1
+    assert selected_row["retrieval_score"] == 0.99
+    assert selected_row["selected"] is True
+    assert selected_row["selected_rank"] == 1
+    assert isinstance(selected_row["selection_score"], float)
+    assert diagnostics["candidate_chunks"][1]["selected"] is False
+    assert diagnostics["candidate_chunks"][1]["retrieval_score"] == 0.0
 
 
 @pytest.mark.asyncio

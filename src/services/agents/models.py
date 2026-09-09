@@ -122,3 +122,4 @@ class RetrievalOutcome:
     tool_attempts: int = 0
     tool_failures: int = 0
     fallbacks: int = 0
+    diagnostics: Dict[str, Any] = field(default_factory=dict)

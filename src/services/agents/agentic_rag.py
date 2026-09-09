@@ -270,6 +270,7 @@ class AgenticRAGService:
                 "tool_attempts": 0,
                 "tool_failures": 0,
                 "fallbacks": 0,
+                "retrieval_diagnostics": [],
             }
 
             effective_top_k = top_k if top_k is not None else self.graph_config.top_k
@@ -367,6 +368,7 @@ class AgenticRAGService:
                         "answer": self.langfuse_tracer.safe_content(answer),
                         "sources_count": len(sources),
                         "retrieval_attempts": retrieval_attempts,
+                        "retrieval_diagnostics": result.get("retrieval_diagnostics", []),
                         "reasoning_steps": reasoning_steps,
                         "execution_time": execution_time,
                     },
@@ -378,6 +380,9 @@ class AgenticRAGService:
                         "terminal_route": terminal_route,
                         "actual_search_mode": actual_search_mode,
                         "retrieval_attempts": retrieval_attempts,
+                        "retrieval_diagnostic_rounds": len(
+                            result.get("retrieval_diagnostics", [])
+                        ),
                         "embedding_attempts": result.get("embedding_attempts", 0),
                         "tool_attempts": result.get("tool_attempts", 0),
                         "tool_failures": result.get("tool_failures", 0),
